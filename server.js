@@ -8,7 +8,34 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+function buildIceServers() {
+  const iceServers = [
+    { urls: 'stun:stun.l.google.com:19302' },
+    { urls: 'stun:stun1.l.google.com:19302' },
+  ];
+
+  const turnUrls = process.env.TURN_URLS;
+  if (!turnUrls) {
+    return iceServers;
+  }
+
+  iceServers.push({
+    urls: turnUrls.split(',').map((url) => url.trim()).filter(Boolean),
+    username: process.env.TURN_USERNAME || '',
+    credential: process.env.TURN_CREDENTIAL || '',
+  });
+
+  return iceServers;
+}
+
+const iceServers = buildIceServers();
+
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.get('/config.js', (req, res) => {
+  res.type('application/javascript');
+  res.send(`window.APP_CONFIG = ${JSON.stringify({ iceServers })};`);
+});
 
 // Aktif odaları tut: roomId -> { broadcasterId, viewers: [socketId] }
 const rooms = new Map();
@@ -97,5 +124,6 @@ const PORT = process.env.PORT || 8080;
 server.listen(PORT, () => {
   console.log(`\n✅ Sunucu çalışıyor: http://localhost:${PORT}`);
   console.log('   Yayıncı sayfası: http://localhost:' + PORT);
+  console.log('   ICE sunucuları:', iceServers.map((server) => server.urls).flat().join(', '));
   console.log('   (İzleyici linki yayın başladıktan sonra otomatik oluşturulur)\n');
 });
