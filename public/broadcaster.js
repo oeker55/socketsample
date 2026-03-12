@@ -13,6 +13,18 @@ let pendingCandidatesMap = {}; // viewerId -> [] (answer gelmeden önce ICE tamp
 let remoteDescSetMap = {}; // viewerId -> bool
 let viewerCount = 0;
 
+function ensureMediaDevices(featureName) {
+  if (!window.isSecureContext) {
+    throw new Error(`${featureName} için HTTPS gerekir. IP adresiyle HTTP üzerinden açıldığında tarayıcı bu özelliği kapatır.`);
+  }
+
+  if (!navigator.mediaDevices) {
+    throw new Error('Tarayıcı medya aygıtlarına erişim vermedi. Sayfayı HTTPS üzerinden açın veya desteklenen bir masaustu tarayıcı kullanın.');
+  }
+
+  return navigator.mediaDevices;
+}
+
 // ——— Stream başlatıcı yardımcı ———
 async function startStream(stream) {
   localStream = stream;
@@ -58,7 +70,8 @@ async function switchSource(newStream) {
 // ——— Kamera ile Başla ———
 document.getElementById('start-camera-btn').addEventListener('click', async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const mediaDevices = ensureMediaDevices('Kamera/mikrofon erişimi');
+    const stream = await mediaDevices.getUserMedia({ video: true, audio: true });
     await startStream(stream);
   } catch (err) {
     alert('❌ Kamera/mikrofon erişimi sağlanamadı:\n' + err.message);
@@ -68,7 +81,11 @@ document.getElementById('start-camera-btn').addEventListener('click', async () =
 // ——— Ekran ile Başla ———
 document.getElementById('start-screen-btn').addEventListener('click', async () => {
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const mediaDevices = ensureMediaDevices('Ekran paylaşımı');
+    if (!mediaDevices.getDisplayMedia) {
+      throw new Error('Bu tarayıcı ekran paylaşımını desteklemiyor. Chrome, Edge veya HTTPS üzerinden çalışan masaustu bir tarayıcı kullanın.');
+    }
+    const stream = await mediaDevices.getDisplayMedia({ video: true, audio: true });
     await startStream(stream);
   } catch (err) {
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
@@ -80,7 +97,8 @@ document.getElementById('start-screen-btn').addEventListener('click', async () =
 // ——— Kameraya Geç ———
 document.getElementById('switch-camera-btn').addEventListener('click', async () => {
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+    const mediaDevices = ensureMediaDevices('Kamera/mikrofon erişimi');
+    const stream = await mediaDevices.getUserMedia({ video: true, audio: true });
     await switchSource(stream);
   } catch (err) {
     alert('❌ Kamera erişimi sağlanamadı:\n' + err.message);
@@ -90,7 +108,11 @@ document.getElementById('switch-camera-btn').addEventListener('click', async () 
 // ——— Ekrana Geç ———
 document.getElementById('switch-screen-btn').addEventListener('click', async () => {
   try {
-    const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const mediaDevices = ensureMediaDevices('Ekran paylaşımı');
+    if (!mediaDevices.getDisplayMedia) {
+      throw new Error('Bu tarayıcı ekran paylaşımını desteklemiyor. Chrome, Edge veya HTTPS üzerinden çalışan masaustu bir tarayıcı kullanın.');
+    }
+    const stream = await mediaDevices.getDisplayMedia({ video: true, audio: true });
     await switchSource(stream);
   } catch (err) {
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
