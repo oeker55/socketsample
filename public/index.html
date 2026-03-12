@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canlı Yayın – Yayıncı Paneli</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>🎥 Canlı Yayın</h1>
+      <p class="subtitle">Yayın başlatın ve linki arkadaşlarınızla paylaşın</p>
+    </div>
+
+    <!-- Başlangıç Ekranı -->
+    <div id="setup-section" class="card">
+      <div class="setup-icon">📡</div>
+      <h2>Yayına Başla</h2>
+      <p>Yayınlamak istediğiniz kaynağı seçin.</p>
+      <div class="source-btns">
+        <button id="start-camera-btn" class="btn btn-primary btn-source">
+          🎥 Kamera ile Yayınla
+        </button>
+        <button id="start-screen-btn" class="btn btn-secondary btn-source">
+          🖥️ Ekranımı Paylaş
+        </button>
+      </div>
+    </div>
+
+    <!-- Yayın Ekranı -->
+    <div id="stream-section" style="display:none;">
+      <div class="video-wrapper">
+        <video id="local-video" autoplay muted playsinline></video>
+        <div class="live-badge">🔴 CANLI</div>
+      </div>
+
+      <div class="card share-box">
+        <h3>🔗 Paylaşım Linki</h3>
+        <p>Bu linki arkadaşlarınıza gönderin — bağlantısı olan herkes yayını izleyebilir.</p>
+        <div class="link-row">
+          <input type="text" id="share-link" readonly placeholder="Link oluşturuluyor..." />
+          <button id="copy-btn" class="btn btn-secondary">📋 Kopyala</button>
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <span class="stat-label">👥 İzleyici</span>
+          <span class="stat-value" id="viewer-count">0</span>
+        </div>
+        <div class="stat-card">
+          <span class="stat-label">📶 Durum</span>
+          <span class="stat-value" id="stream-status" style="color:#2ecc71;">Canlı</span>
+        </div>
+      </div>
+
+      <!-- Kaynak değiştir -->
+      <div class="source-switch-row">
+        <button id="switch-camera-btn" class="btn btn-secondary">🎥 Kameraya Geç</button>
+        <button id="switch-screen-btn" class="btn btn-secondary">🖥️ Ekrana Geç</button>
+      </div>
+
+      <button id="stop-btn" class="btn btn-danger btn-large">⏹ Yayını Durdur</button>
+
+      <!-- Chat -->
+      <div class="chat-box card">
+        <div class="chat-header">
+          <span>💬 Canlı Sohbet</span>
+          <span class="chat-badge" id="chat-badge" style="display:none"></span>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-row">
+          <input id="chat-name" type="text" maxlength="30" placeholder="Adınız" class="chat-name-input" />
+          <input id="chat-input" type="text" maxlength="500" placeholder="Mesaj yazın..." />
+          <button id="chat-send" class="btn btn-primary">➜</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="chat.js"></script>
+  <script src="broadcaster.js"></script>
+</body>
+</html>

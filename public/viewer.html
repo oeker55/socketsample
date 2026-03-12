@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Canlı Yayın – İzleyici</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📺 Canlı Yayın</h1>
+    </div>
+
+    <!-- Yükleniyor / Hata Durumu -->
+    <div id="waiting-section" class="card" style="text-align:center;">
+      <div id="loading-spinner" class="spinner"></div>
+      <p id="status-msg" class="status-msg">Yayına bağlanılıyor...</p>
+    </div>
+
+    <!-- Video Ekranı -->
+    <div id="video-section" style="display:none;">
+      <div class="video-wrapper" id="video-wrapper">
+        <video id="remote-video" playsinline></video>
+        <div class="live-badge">🔴 CANLI</div>
+        <!-- Ses engeli overlay -->
+        <div id="unmute-overlay">
+          <button id="unmute-btn">🔊 Sesi Aç &amp; Başlat</button>
+        </div>
+        <!-- Kontrol çubuğu -->
+        <div class="video-controls">
+          <button id="fullscreen-btn" class="ctrl-btn" title="Tam Ekran">
+            <svg id="fs-icon-expand" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
+              <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 13h2v4h4v2H3v-6zm16 4h-4v2h6v-6h-2v4z"/>
+            </svg>
+            <svg id="fs-icon-shrink" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22" style="display:none">
+              <path d="M5 16h3v3h2v-5H5v2zm3-8H5V6h2V3H5v2H3v3h2V8h3V5h2V3h-2v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2V3h-2v5h5V6h-3z"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat -->
+      <div class="chat-box card">
+        <div class="chat-header">
+          <span>💬 Canlı Sohbet</span>
+          <span class="chat-badge" id="chat-badge" style="display:none"></span>
+        </div>
+        <div class="chat-messages" id="chat-messages"></div>
+        <div class="chat-input-row">
+          <input id="chat-name" type="text" maxlength="30" placeholder="Adınız" class="chat-name-input" />
+          <input id="chat-input" type="text" maxlength="500" placeholder="Mesaj yazın..." />
+          <button id="chat-send" class="btn btn-primary">➜</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="chat.js"></script>
+  <script src="viewer.js"></script>
+</body>
+</html>
