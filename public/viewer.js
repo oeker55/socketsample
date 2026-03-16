@@ -99,8 +99,7 @@ if (!roomId) {
     const { fromId, candidate, targetId } = data;
     // Sadece bana gönderilenleri işle
     if (targetId !== socket.id) return;
-    if (!peerConnection) return;
-    if (!remoteDescSet) {
+    if (!peerConnection || !remoteDescSet) {
       pendingCandidates.push(candidate);
       return;
     }

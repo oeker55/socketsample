@@ -14,15 +14,22 @@ function buildIceServers() {
   ];
 
   const turnUrls = process.env.TURN_URLS;
-  if (!turnUrls) {
-    return iceServers;
+  if (turnUrls) {
+    // Kullanıcının kendi TURN sunucuları (env ile)
+    iceServers.push({
+      urls: turnUrls.split(',').map((url) => url.trim()).filter(Boolean),
+      username: process.env.TURN_USERNAME || '',
+      credential: process.env.TURN_CREDENTIAL || '',
+    });
+  } else {
+    // Metered Open Relay – ücretsiz genel TURN sunucusu
+    iceServers.push(
+      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turns:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+    );
   }
-
-  iceServers.push({
-    urls: turnUrls.split(',').map((url) => url.trim()).filter(Boolean),
-    username: process.env.TURN_USERNAME || '',
-    credential: process.env.TURN_CREDENTIAL || '',
-  });
 
   return iceServers;
 }
