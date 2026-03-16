@@ -1,4 +1,6 @@
+// ——— Socket.IO Bağlantısı ———
 const socket = io();
+const myId = crypto.randomUUID();
 
 const ICE_SERVERS = {
   iceServers: window.APP_CONFIG?.iceServers || [
@@ -12,6 +14,7 @@ let peerConnections = {}; // viewerId -> RTCPeerConnection
 let pendingCandidatesMap = {}; // viewerId -> [] (answer gelmeden önce ICE tamponu)
 let remoteDescSetMap = {}; // viewerId -> bool
 let viewerCount = 0;
+let currentRoomId = null;
 
 function ensureMediaDevices(featureName) {
   if (!window.isSecureContext) {
@@ -25,6 +28,99 @@ function ensureMediaDevices(featureName) {
   return navigator.mediaDevices;
 }
 
+function generateRoomId() {
+  return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
+}
+
+// ——— Socket.IO Olaylarını Kur ———
+function setupSocketEvents() {
+  // İzleyiciden answer geldi
+  socket.on('answer', async (data) => {
+    const { viewerId, answer } = data;
+    const pc = peerConnections[viewerId];
+    if (!pc) return;
+    try {
+      await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      remoteDescSetMap[viewerId] = true;
+      for (const c of (pendingCandidatesMap[viewerId] || [])) {
+        await pc.addIceCandidate(new RTCIceCandidate(c));
+      }
+      pendingCandidatesMap[viewerId] = [];
+    } catch (err) {
+      console.error('Answer işleme hatası:', err);
+    }
+  });
+
+  // ICE adayı geldi
+  socket.on('ice-candidate', async (data) => {
+    const { fromId, candidate, targetId } = data;
+    const pc = peerConnections[fromId];
+    if (!pc) return;
+    if (!remoteDescSetMap[fromId]) {
+      if (!pendingCandidatesMap[fromId]) pendingCandidatesMap[fromId] = [];
+      pendingCandidatesMap[fromId].push(candidate);
+      return;
+    }
+    try {
+      await pc.addIceCandidate(new RTCIceCandidate(candidate));
+    } catch (err) {
+      console.error('ICE aday hatası:', err);
+    }
+  });
+
+  // İzleyici katıldı
+  socket.on('viewer-joined', async (data) => {
+    const { viewerId } = data;
+    await handleNewViewer(viewerId);
+  });
+
+  // İzleyici ayrıldı
+  socket.on('viewer-left', (data) => {
+    const { viewerId } = data;
+    if (peerConnections[viewerId]) {
+      peerConnections[viewerId].close();
+      delete peerConnections[viewerId];
+      delete pendingCandidatesMap[viewerId];
+      delete remoteDescSetMap[viewerId];
+      viewerCount = Math.max(0, viewerCount - 1);
+      document.getElementById('viewer-count').textContent = viewerCount;
+    }
+  });
+}
+
+setupSocketEvents();
+
+// ——— Yeni izleyici için peer connection oluştur ———
+async function handleNewViewer(viewerId) {
+  const pc = new RTCPeerConnection(ICE_SERVERS);
+  peerConnections[viewerId] = pc;
+  pendingCandidatesMap[viewerId] = [];
+  remoteDescSetMap[viewerId] = false;
+
+  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+
+  pc.onicecandidate = (e) => {
+    if (e.candidate) {
+      socket.emit('ice-candidate', { fromId: socket.id, targetId: viewerId, candidate: e.candidate });
+    }
+  };
+
+  pc.onconnectionstatechange = () => {
+    console.log('Bağlantı durumu (' + viewerId + '):', pc.connectionState);
+  };
+
+  try {
+    const offer = await pc.createOffer();
+    await pc.setLocalDescription(offer);
+    socket.emit('offer', { broadcasterId: socket.id, viewerId, offer });
+  } catch (err) {
+    console.error('Offer oluşturma hatası:', err);
+  }
+
+  viewerCount++;
+  document.getElementById('viewer-count').textContent = viewerCount;
+}
+
 // ——— Stream başlatıcı yardımcı ———
 async function startStream(stream) {
   localStream = stream;
@@ -32,12 +128,14 @@ async function startStream(stream) {
   document.getElementById('setup-section').style.display = 'none';
   document.getElementById('stream-section').style.display = 'block';
 
-  socket.emit('create-room', ({ roomId }) => {
-    const link = `${window.location.origin}/viewer.html?room=${roomId}`;
-    document.getElementById('share-link').value = link;
-    // Chat'i yayıncı olarak başlat
-    initChat(socket, true);
-  });
+  const roomId = generateRoomId();
+  currentRoomId = roomId;
+  socket.emit('join-room', roomId, 'broadcaster');
+
+  const link = `${window.location.origin}/viewer.html?room=${roomId}`;
+  document.getElementById('share-link').value = link;
+  // Chat'i yayıncı olarak başlat
+  initChat(socket, true);
 
   // Ekran paylaşımı kullanıcı kendisi durdurursa
   stream.getVideoTracks()[0].onended = () => {
@@ -140,83 +238,12 @@ document.getElementById('stop-btn').addEventListener('click', () => {
   remoteDescSetMap = {};
   viewerCount = 0;
   document.getElementById('viewer-count').textContent = 0;
-  socket.disconnect();
+
+  // Yayıncı ayrıldığını bildir
+  if (socket.connected) {
+    socket.emit('broadcaster-left');
+  }
 
   document.getElementById('stream-section').style.display = 'none';
   document.getElementById('setup-section').style.display = 'block';
-});
-
-// ——— Yeni izleyici katıldı: Offer gönder ———
-socket.on('viewer-joined', async (viewerId) => {
-  const pc = new RTCPeerConnection(ICE_SERVERS);
-  peerConnections[viewerId] = pc;
-  pendingCandidatesMap[viewerId] = [];
-  remoteDescSetMap[viewerId] = false;
-
-  localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
-
-  pc.onicecandidate = (e) => {
-    if (e.candidate) {
-      socket.emit('ice-candidate', { targetId: viewerId, candidate: e.candidate });
-    }
-  };
-
-  pc.onconnectionstatechange = () => {
-    console.log('Bağlantı durumu (' + viewerId + '):', pc.connectionState);
-  };
-
-  try {
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    socket.emit('offer', { viewerId, offer });
-  } catch (err) {
-    console.error('Offer oluşturma hatası:', err);
-  }
-
-  viewerCount++;
-  document.getElementById('viewer-count').textContent = viewerCount;
-});
-
-// ——— İzleyiciden Answer geldi ———
-socket.on('answer', async ({ viewerId, answer }) => {
-  const pc = peerConnections[viewerId];
-  if (!pc) return;
-  try {
-    await pc.setRemoteDescription(new RTCSessionDescription(answer));
-    remoteDescSetMap[viewerId] = true;
-    // Tampondaki ICE adaylarını işle
-    for (const c of (pendingCandidatesMap[viewerId] || [])) {
-      await pc.addIceCandidate(new RTCIceCandidate(c));
-    }
-    pendingCandidatesMap[viewerId] = [];
-  } catch (err) {
-    console.error('Answer işleme hatası:', err);
-  }
-});
-
-// ——— ICE Adayı geldi ———
-socket.on('ice-candidate', async ({ fromId, candidate }) => {
-  const pc = peerConnections[fromId];
-  if (!pc) return;
-  // Remote description henüz set edilmediyse tampona al
-  if (!remoteDescSetMap[fromId]) {
-    if (!pendingCandidatesMap[fromId]) pendingCandidatesMap[fromId] = [];
-    pendingCandidatesMap[fromId].push(candidate);
-    return;
-  }
-  try {
-    await pc.addIceCandidate(new RTCIceCandidate(candidate));
-  } catch (err) {
-    console.error('ICE aday hatası:', err);
-  }
-});
-
-// ——— İzleyici ayrıldı ———
-socket.on('viewer-left', (viewerId) => {
-  if (peerConnections[viewerId]) {
-    peerConnections[viewerId].close();
-    delete peerConnections[viewerId];
-    viewerCount = Math.max(0, viewerCount - 1);
-    document.getElementById('viewer-count').textContent = viewerCount;
-  }
 });

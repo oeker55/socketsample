@@ -1,5 +1,5 @@
 // chat.js — Yayıncı ve izleyici sayfası tarafından ortak kullanılır
-// socket ve isBroadcaster değişkeninin dışarıda tanımlı olması gerekir
+// socket: Socket.IO bağlantısı, isBroadcaster: bool
 
 function initChat(socket, isBroadcaster) {
   const messagesEl = document.getElementById('chat-messages');
@@ -54,7 +54,13 @@ function initChat(socket, isBroadcaster) {
     if (!text) return;
     const name = getName();
     localStorage.setItem('chat-name', name);
-    socket.emit('chat-message', { text, name });
+    const safeText = String(text).slice(0, 500);
+    const safeName = String(name).slice(0, 30);
+    const msg = { name: safeName, text: safeText, ts: Date.now(), isBroadcaster };
+    // Socket.IO ile gönder
+    socket.emit('chat-message', msg);
+    // Kendi mesajımızı da göster
+    appendMessage({ ...msg, self: true });
     inputEl.value = '';
     inputEl.focus();
   }
