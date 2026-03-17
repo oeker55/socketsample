@@ -402,6 +402,27 @@ video {
   z-index: 2;
 }
 
+/* ——— YEREL AJAN DURUMU ——— */
+.agent-status {
+  padding: 10px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.agent-detected {
+  background: rgba(231, 168, 66, 0.12);
+  border: 1px solid #e2a842;
+  color: #e2a842;
+}
+
+.agent-connected {
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid #2ecc71;
+  color: #2ecc71;
+}
+
 /* Tam ekran modunda video boyutu */
 :fullscreen #remote-video,
 :-webkit-full-screen #remote-video {

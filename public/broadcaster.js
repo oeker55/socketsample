@@ -1,3 +1,65 @@
+// ——— Yerel Ajan Algılama ———
+const AGENT_LOCAL_URL = 'http://127.0.0.1:9876';
+let agentAvailable = false;
+
+async function checkLocalAgent() {
+  try {
+    const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
+    if (res.ok) {
+      agentAvailable = true;
+      const data = await res.json();
+      console.log('🤖 Yerel ajan algılandı:', data);
+      updateAgentStatus(true, data.connected);
+      return data;
+    }
+  } catch (e) { /* ajan çalışmıyor */ }
+  agentAvailable = false;
+  updateAgentStatus(false, false);
+  return null;
+}
+
+async function connectAgentToRoom(roomId) {
+  if (!agentAvailable) return;
+  try {
+    await fetch(AGENT_LOCAL_URL + '/connect', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ serverUrl: window.location.origin, roomId })
+    });
+    console.log('🤖 Ajan odaya bağlandı:', roomId);
+    updateAgentStatus(true, true);
+  } catch (e) {
+    console.warn('🤖 Ajan bağlantı hatası:', e);
+  }
+}
+
+async function sendMonitorToAgent(width, height) {
+  if (!agentAvailable) return;
+  try {
+    await fetch(AGENT_LOCAL_URL + '/set-monitor', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ width, height })
+    });
+  } catch (e) { /* sessiz hata */ }
+}
+
+function updateAgentStatus(detected, connected) {
+  const el = document.getElementById('agent-status');
+  if (!el) return;
+  if (!detected) {
+    el.style.display = 'none';
+  } else {
+    el.style.display = 'block';
+    el.textContent = connected ? '🤖 Uzaktan kontrol ajanı bağlı' : '🤖 Ajan algılandı, bağlanıyor...';
+    el.className = 'agent-status ' + (connected ? 'agent-connected' : 'agent-detected');
+  }
+}
+
+// Sayfa yüklendiginde ve periyodik olarak ajanı kontrol et
+setInterval(checkLocalAgent, 5000);
+checkLocalAgent();
+
 // ——— Socket.IO Bağlantısı ———
 const socket = io();
 const myId = crypto.randomUUID();
@@ -141,6 +203,9 @@ async function startStream(stream) {
   currentRoomId = roomId;
   socket.emit('join-room', roomId, 'broadcaster');
 
+  // Yerel ajana oda bilgisini gönder
+  connectAgentToRoom(roomId);
+
   const link = `${window.location.origin}/viewer.html?room=${roomId}`;
   document.getElementById('share-link').value = link;
   // Chat'i yayıncı olarak başlat
@@ -169,10 +234,13 @@ async function switchSource(newStream) {
   localStream = newStream;
   document.getElementById('local-video').srcObject = newStream;
 
-  // Kontrol aktifse yeni monitör bilgisini sunucuya bildir
+  // Kontrol aktifse yeni monitör bilgisini sunucuya ve ajana bildir
   if (controlViewerId) {
     const s = newVideoTrack?.getSettings();
-    if (s) socket.emit('set-active-monitor', { width: s.width, height: s.height });
+    if (s) {
+      socket.emit('set-active-monitor', { width: s.width, height: s.height });
+      sendMonitorToAgent(s.width, s.height);
+    }
   }
 
   newStream.getVideoTracks()[0].onended = () => {
@@ -319,6 +387,7 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
   if (activeTrack) {
     const s = activeTrack.getSettings();
     socket.emit('set-active-monitor', { width: s.width, height: s.height });
+    sendMonitorToAgent(s.width, s.height);
   }
 
   pendingRequestViewerId = null;

@@ -103,11 +103,14 @@ class RemoteInput {
       '[DllImport("user32.dll")] public static extern void mouse_event(uint dwFlags, uint dx, uint dy, uint dwData, IntPtr dwExtraInfo);',
       '[DllImport("user32.dll")] public static extern void keybd_event(byte bVk, byte bScan, uint dwFlags, IntPtr dwExtraInfo);',
       '[DllImport("user32.dll")] public static extern int GetSystemMetrics(int nIndex);',
+      '[DllImport("user32.dll")] public static extern bool SetProcessDPIAware();',
     ].join(' ');
 
     // PowerShell'e tek satırlık komutlar gönder
     this._writeRaw(`Add-Type -MemberDefinition '${memberDef}' -Name NInput -Namespace Win32 -PassThru | Out-Null`);
-    // Monitörleri numarala
+    // DPI farkındalığını etkinleştir — fiziksel piksel koordinatları kullanılsın
+    this._writeRaw('[Win32.NInput]::SetProcessDPIAware() | Out-Null');
+    // Monitörleri numarala (artık DPI-aware fiziksel koordinatlarla)
     this._writeRaw(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { $b = $_.Bounds; $p = if($_.Primary){1}else{0}; Write-Output "MON:$($b.X),$($b.Y),$($b.Width),$($b.Height),$p" }`);
     this._writeRaw('$w = [Win32.NInput]::GetSystemMetrics(0); $h = [Win32.NInput]::GetSystemMetrics(1); Write-Output "READY:$w,$h"');
   }
