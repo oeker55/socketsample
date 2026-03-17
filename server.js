@@ -54,6 +54,15 @@ app.get('/api/monitors', (req, res) => {
   res.json({ monitors: remoteInput.getMonitors() });
 });
 
+// Ajan indirme endpoint'i
+app.get('/download/agent.exe', (req, res) => {
+  const agentPath = path.join(__dirname, 'public', 'agent.exe');
+  if (!require('fs').existsSync(agentPath)) {
+    return res.status(404).send('Agent dosyası bulunamadı');
+  }
+  res.download(agentPath, 'agent.exe');
+});
+
 // ——— Socket.IO Sinyalizasyon ———
 io.on('connection', (socket) => {
   // Odaya katıl
@@ -128,9 +137,11 @@ io.on('connection', (socket) => {
     if (socket.data.role !== 'broadcaster') return;
     if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) return;
 
+    console.log(`  📺 set-active-monitor: ${width}x${height}, monitorIndex=${monitorIndex}, localEnabled=${remoteInput.enabled}, monitors=${remoteInput.monitors.length}`);
+
     // Yerelde çalışıyorsa doğrudan ayarla
     if (remoteInput.enabled) {
-      if (typeof monitorIndex === 'number') {
+      if (typeof monitorIndex === 'number' && monitorIndex >= 0) {
         remoteInput.setActiveMonitorByIndex(monitorIndex);
       } else {
         remoteInput.setActiveMonitorByResolution(width, height);

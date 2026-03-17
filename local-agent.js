@@ -221,7 +221,8 @@ function connectToRemoteServer(url, roomId) {
   });
 
   remoteSocket.on('set-active-monitor', ({ width, height, monitorIndex }) => {
-    if (typeof monitorIndex === 'number') {
+    console.log(`  📺 set-active-monitor alındı: ${width}x${height}, monitorIndex=${monitorIndex}`);
+    if (typeof monitorIndex === 'number' && monitorIndex >= 0) {
       remoteInput.setActiveMonitorByIndex(monitorIndex);
     } else if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
       remoteInput.setActiveMonitorByResolution(width, height);

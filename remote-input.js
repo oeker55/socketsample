@@ -103,6 +103,7 @@ class RemoteInput {
     // Çoklu monitör desteği
     this.monitors = [];       // [{ x, y, w, h, primary }]
     this.activeMonitor = null; // Aktif monitör { x, y, w, h }
+    this._pendingMonitor = null; // Monitörler yüklenene kadar bekleyen istek
     this._platform = os.platform();
     this._macTmpFile = null;
     this._lastAbsX = 0;
@@ -169,6 +170,8 @@ class RemoteInput {
             // Kuyrukta bekleyen komutları gönder
             for (const cmd of this._cmdQueue) this._writeRaw(cmd);
             this._cmdQueue = [];
+            // Bekleyen monitör isteğini işle
+            this._processPendingMonitor();
           }
         }
         if (trimmed.startsWith('MON:')) {
@@ -258,6 +261,7 @@ class RemoteInput {
             this._initDone = true;
             console.log(`  ✅ Uzaktan kontrol hazır — macOS (birincil: ${parts[0]}x${parts[1]})`);
             console.log('  ℹ  macOS: Erişilebilirlik izni gerekebilir (Sistem Ayarları → Gizlilik → Erişilebilirlik)');
+            this._processPendingMonitor();
           }
         }
         if (trimmed.startsWith('MON:')) {
@@ -288,7 +292,14 @@ class RemoteInput {
 
   // Monitörü indeks ile ayarla (en güvenilir yöntem)
   setActiveMonitorByIndex(index) {
-    if (typeof index !== 'number' || index < 0 || index >= this.monitors.length) return;
+    if (typeof index !== 'number' || index < 0) return;
+    if (this.monitors.length === 0) {
+      // Monitörler henüz yüklenmedi, kuyrukta beklet
+      console.log(`  ⏳ Monitörler yükleniyor, indeks ${index} kuyruğa alındı`);
+      this._pendingMonitor = { type: 'index', index };
+      return;
+    }
+    if (index >= this.monitors.length) return;
     this.activeMonitor = this.monitors[index];
     const m = this.activeMonitor;
     console.log(`  🎯 Aktif monitör [${index}]: ${m.w}x${m.h} konum(${m.x},${m.y})`);
@@ -296,40 +307,95 @@ class RemoteInput {
 
   // Paylaşılan monitörü çözünürlüğe göre eşle
   setActiveMonitorByResolution(width, height) {
-    if (!width || !height || this.monitors.length === 0) return;
+    if (!width || !height) return;
+    if (this.monitors.length === 0) {
+      // Monitörler henüz yüklenmedi, kuyrukta beklet
+      console.log(`  ⏳ Monitörler yükleniyor, çözünürlük ${width}x${height} kuyruğa alındı`);
+      this._pendingMonitor = { type: 'resolution', width, height };
+      return;
+    }
+    console.log(`  🔍 Monitör eşleştirme: ${width}x${height}, mevcut monitörler:`, this.monitors.map(m => `${m.w}x${m.h}`));
+
+    let match = null;
+
     // 1. Tam eşleşme ara
-    let match = this.monitors.find(m => m.w === width && m.h === height);
+    match = this.monitors.find(m => m.w === width && m.h === height);
+
+    // 2. %5 toleransla çözünürlük eşleşmesi (DPI farkları için)
     if (!match) {
-      // 2. %5 toleransla çözünürlük eşleşmesi (DPI farkları için)
       for (const m of this.monitors) {
         const wRatio = Math.abs(m.w - width) / Math.max(m.w, width);
         const hRatio = Math.abs(m.h - height) / Math.max(m.h, height);
         if (wRatio < 0.05 && hRatio < 0.05) {
           match = m;
+          console.log(`  🔍 %5 tolerans eşleşmesi: ${m.w}x${m.h}`);
           break;
         }
       }
     }
+
+    // 3. DPI ölçek faktörleriyle eşleşme (Chrome CSS piksel raporlayabilir)
     if (!match) {
-      // 3. En yakın piksel alanı eşleşmesi (en-boy oranı yerine)
-      const targetArea = width * height;
-      let bestDiff = Infinity;
-      for (const m of this.monitors) {
-        const diff = Math.abs((m.w * m.h) - targetArea);
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          match = m;
+      const scales = [1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+      for (const s of scales) {
+        const sw = Math.round(width * s);
+        const sh = Math.round(height * s);
+        match = this.monitors.find(m => Math.abs(m.w - sw) <= 2 && Math.abs(m.h - sh) <= 2);
+        if (match) {
+          console.log(`  🔍 DPI ölçek eşleşmesi x${s}: ${sw}x${sh} → ${match.w}x${match.h}`);
+          break;
         }
       }
     }
+
+    // 4. Ters DPI — monitör fiziksel piksel, Chrome daha büyük raporlayabilir
+    if (!match) {
+      const scales = [1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+      for (const s of scales) {
+        match = this.monitors.find(m => {
+          const mw = Math.round(m.w / s);
+          const mh = Math.round(m.h / s);
+          return Math.abs(mw - width) <= 2 && Math.abs(mh - height) <= 2;
+        });
+        if (match) {
+          console.log(`  🔍 Ters DPI eşleşmesi /${s}: ${match.w}x${match.h}`);
+          break;
+        }
+      }
+    }
+
+    // 5. Benzersiz en-boy oranı eşleşmesi
+    if (!match) {
+      const targetRatio = width / height;
+      const ratioMatches = this.monitors.filter(m => Math.abs((m.w / m.h) - targetRatio) < 0.02);
+      if (ratioMatches.length === 1) {
+        match = ratioMatches[0];
+        console.log(`  🔍 Benzersiz en-boy oranı eşleşmesi: ${match.w}x${match.h}`);
+      }
+    }
+
     if (match) {
       this.activeMonitor = match;
       console.log(`  🎯 Aktif monitör: ${match.w}x${match.h} konum(${match.x},${match.y})`);
+    } else {
+      console.log(`  ⚠ Monitör eşleşmesi bulunamadı: ${width}x${height}`);
     }
   }
 
   getMonitors() {
     return this.monitors;
+  }
+
+  _processPendingMonitor() {
+    if (!this._pendingMonitor || this.monitors.length === 0) return;
+    const req = this._pendingMonitor;
+    this._pendingMonitor = null;
+    console.log('  🔄 Bekleyen monitör isteği işleniyor:', req);
+    if (req.type === 'index') {
+      this.setActiveMonitorByIndex(req.index);
+    } else if (req.type === 'resolution') {
+      this.setActiveMonitorByResolution(req.width, req.height);
+    }
   }
 
   _writeRaw(cmd) {
@@ -358,6 +424,11 @@ class RemoteInput {
       x = Math.round(m.x + nx * m.w);
       y = Math.round(m.y + ny * m.h);
     } else {
+      // activeMonitor ayarlanmamış — birincil ekrana düşecek!
+      if (!this._warnedNoMonitor) {
+        console.log(`  ⚠ activeMonitor null! Birincil ekrana (${this.screenWidth}x${this.screenHeight}) düşülüyor. Monitors: ${this.monitors.length}`);
+        this._warnedNoMonitor = true;
+      }
       x = Math.round(nx * this.screenWidth);
       y = Math.round(ny * this.screenHeight);
     }
@@ -375,6 +446,8 @@ class RemoteInput {
     if (!this.ready) return;
     flags = Math.round(flags);
     data = Math.round(data || 0);
+    // PowerShell uint32 negatif değer kabul etmez, unsigned'a dönüştür
+    if (data < 0) data = (data + 0x100000000) >>> 0;
     this._write(`[Win32.NInput]::mouse_event(${flags}, 0, 0, ${data}, [IntPtr]::Zero)`);
   }
 

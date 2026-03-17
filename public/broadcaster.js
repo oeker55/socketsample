@@ -2,6 +2,17 @@
 const AGENT_LOCAL_URL = 'http://127.0.0.1:9876';
 let agentAvailable = false;
 
+// Ajan paneli tıklama — yardım bölümünü aç/kapa
+document.addEventListener('DOMContentLoaded', () => {
+  const bar = document.getElementById('agent-status-bar');
+  if (bar) {
+    bar.addEventListener('click', () => {
+      const help = document.getElementById('agent-help');
+      if (help) help.style.display = help.style.display === 'none' ? 'block' : 'none';
+    });
+  }
+});
+
 async function checkLocalAgent() {
   try {
     const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
@@ -34,33 +45,89 @@ async function connectAgentToRoom(roomId) {
 }
 
 async function findMonitorIndex(width, height) {
-  if (!agentAvailable) return undefined;
-  try {
-    const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
-    if (!res.ok) return undefined;
-    const status = await res.json();
-    const monitors = status.monitors || [];
-    // 1. Tam eşleşme
-    let idx = monitors.findIndex(m => m.w === width && m.h === height);
-    if (idx === -1) {
-      // 2. %5 toleransla eşleşme
+  let monitors = [];
+
+  // 1. Ajandan monitör listesini al
+  if (agentAvailable) {
+    try {
+      const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
+      if (res.ok) {
+        const status = await res.json();
+        monitors = status.monitors || [];
+      }
+    } catch (e) { /* ajan başarısız */ }
+  }
+
+  // 2. Ajan yoksa sunucunun /api/monitors endpoint'inden al
+  if (monitors.length === 0) {
+    try {
+      const res = await fetch('/api/monitors', { signal: AbortSignal.timeout(1000) });
+      if (res.ok) {
+        const data = await res.json();
+        monitors = data.monitors || [];
+      }
+    } catch (e) { /* sunucu başarısız */ }
+  }
+
+  if (monitors.length === 0) return undefined;
+  console.log('📺 findMonitorIndex:', { width, height, monitors });
+
+  // A. Tam eşleşme
+  let idx = monitors.findIndex(m => m.w === width && m.h === height);
+
+  // B. %5 toleransla eşleşme
+  if (idx === -1) {
+    idx = monitors.findIndex(m => {
+      const wR = Math.abs(m.w - width) / Math.max(m.w, width);
+      const hR = Math.abs(m.h - height) / Math.max(m.h, height);
+      return wR < 0.05 && hR < 0.05;
+    });
+  }
+
+  // C. DPI ölçek faktörleriyle eşleşme (Chrome CSS piksel raporlayabilir)
+  if (idx === -1) {
+    const scales = [1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+    for (const s of scales) {
+      const sw = Math.round(width * s);
+      const sh = Math.round(height * s);
+      idx = monitors.findIndex(m => Math.abs(m.w - sw) <= 2 && Math.abs(m.h - sh) <= 2);
+      if (idx !== -1) {
+        console.log('📺 DPI ölçek eşleşmesi: x' + s, sw + 'x' + sh);
+        break;
+      }
+    }
+  }
+
+  // D. Ters DPI — fiziksel piksel küçültülmüş olabilir
+  if (idx === -1) {
+    const scales = [1.25, 1.5, 1.75, 2.0, 2.5, 3.0];
+    for (const s of scales) {
       idx = monitors.findIndex(m => {
-        const wR = Math.abs(m.w - width) / Math.max(m.w, width);
-        const hR = Math.abs(m.h - height) / Math.max(m.h, height);
-        return wR < 0.05 && hR < 0.05;
+        const mw = Math.round(m.w / s);
+        const mh = Math.round(m.h / s);
+        return Math.abs(mw - width) <= 2 && Math.abs(mh - height) <= 2;
       });
+      if (idx !== -1) {
+        console.log('📺 Ters DPI eşleşmesi: /' + s);
+        break;
+      }
     }
-    if (idx === -1) {
-      // 3. En yakın piksel alanı
-      const targetArea = width * height;
-      let bestDiff = Infinity;
-      monitors.forEach((m, i) => {
-        const diff = Math.abs((m.w * m.h) - targetArea);
-        if (diff < bestDiff) { bestDiff = diff; idx = i; }
-      });
+  }
+
+  // E. Benzersiz en-boy oranı eşleşmesi (birden fazla monitör farklı orana sahipse)
+  if (idx === -1) {
+    const targetRatio = width / height;
+    const ratioMatches = monitors
+      .map((m, i) => ({ i, ratio: m.w / m.h, diff: Math.abs((m.w / m.h) - targetRatio) }))
+      .filter(r => r.diff < 0.02);
+    if (ratioMatches.length === 1) {
+      idx = ratioMatches[0].i;
+      console.log('📺 Benzersiz en-boy oranı eşleşmesi');
     }
-    return idx >= 0 ? idx : undefined;
-  } catch (e) { return undefined; }
+  }
+
+  console.log('📺 findMonitorIndex sonuç:', idx);
+  return idx >= 0 ? idx : undefined;
 }
 
 async function sendMonitorInfo(width, height) {
@@ -85,19 +152,45 @@ async function sendMonitorInfo(width, height) {
 let showAgentUI = false;
 
 function updateAgentStatus(detected, connected) {
+  // Eski status div (kontrol isteği sırasında gösterilir)
   const el = document.getElementById('agent-status');
-  if (!el) return;
-  if (!detected || !showAgentUI) {
-    el.style.display = 'none';
-  } else {
-    el.style.display = 'block';
-    if (connected) {
-      el.textContent = '🤖 Uzaktan kontrol ajanı bağlı';
-      el.className = 'agent-status agent-connected';
+  if (el) {
+    if (!detected || !showAgentUI) {
+      el.style.display = 'none';
     } else {
-      el.textContent = '🤖 Ajan algılandı, bağlanıyor...';
-      el.className = 'agent-status agent-detected';
+      el.style.display = 'block';
+      if (connected) {
+        el.textContent = '🤖 Uzaktan kontrol ajanı bağlı';
+        el.className = 'agent-status agent-connected';
+      } else {
+        el.textContent = '🤖 Ajan algılandı, bağlanıyor...';
+        el.className = 'agent-status agent-detected';
+      }
     }
+  }
+
+  // Yeni kalıcı ajan paneli
+  const bar = document.getElementById('agent-status-bar');
+  const icon = document.getElementById('agent-status-icon');
+  const text = document.getElementById('agent-status-text');
+  const help = document.getElementById('agent-help');
+  if (!bar) return;
+
+  if (detected && connected) {
+    bar.className = 'agent-status-bar agent-ready';
+    icon.textContent = '✅';
+    text.textContent = 'Uzaktan kontrol ajanı bağlı ve hazır';
+    if (help) help.style.display = 'none';
+  } else if (detected) {
+    bar.className = 'agent-status-bar agent-detecting';
+    icon.textContent = '🔄';
+    text.textContent = 'Ajan algılandı, bağlanıyor...';
+    if (help) help.style.display = 'none';
+  } else {
+    bar.className = 'agent-status-bar agent-not-detected';
+    icon.textContent = '⚠️';
+    text.textContent = 'Uzaktan kontrol ajanı algılanmadı';
+    if (help) help.style.display = 'block';
   }
 }
 
@@ -107,15 +200,13 @@ async function silentAgentCheck() {
     const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
     if (res.ok) {
       agentAvailable = true;
-      if (showAgentUI) {
-        const data = await res.json();
-        updateAgentStatus(true, data.connected);
-      }
+      const data = await res.json();
+      updateAgentStatus(true, data.connected);
       return;
     }
   } catch (e) { /* ajan çalışmıyor */ }
   agentAvailable = false;
-  if (showAgentUI) updateAgentStatus(false, false);
+  updateAgentStatus(false, false);
 }
 
 // Periyodik kontrol
@@ -293,6 +384,9 @@ async function startStream(stream) {
   // Chat'i yayıncı olarak başlat
   initChat(socket, true);
 
+  // Ajan durumunu kontrol et ve paneli güncelle
+  checkLocalAgent();
+
   // Ekran paylaşımı kullanıcı kendisi durdurursa
   stream.getVideoTracks()[0].onended = () => {
     document.getElementById('stop-btn').click();
@@ -440,11 +534,27 @@ socket.on('control-request', async ({ viewerId, viewerName }) => {
   // Ajan algılıysa monitör seçici göster
   showAgentUI = true;
   const agentData = await checkLocalAgent();
+  let monitorList = null;
   if (agentAvailable && agentData && agentData.monitors && agentData.monitors.length > 1) {
+    monitorList = agentData.monitors;
+  }
+  // Ajan yoksa sunucudan monitör listesini al
+  if (!monitorList) {
+    try {
+      const res = await fetch('/api/monitors', { signal: AbortSignal.timeout(1000) });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.monitors && data.monitors.length > 1) {
+          monitorList = data.monitors;
+        }
+      }
+    } catch (e) { /* sessiz */ }
+  }
+  if (monitorList && monitorList.length > 1) {
     const sel = document.getElementById('monitor-select');
     if (sel) {
       sel.innerHTML = '<option value="-1">🔍 Otomatik algıla</option>';
-      agentData.monitors.forEach((m, i) => {
+      monitorList.forEach((m, i) => {
         const label = '🖥️ Monitör ' + (i + 1) + ': ' + m.w + 'x' + m.h + (m.primary ? ' (Ana)' : '');
         sel.innerHTML += '<option value="' + i + '">' + label + '</option>';
       });

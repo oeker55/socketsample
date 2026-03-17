@@ -402,7 +402,75 @@ video {
   z-index: 2;
 }
 
-/* ——— YEREL AJAN DURUMU ——— */
+/* ——— YEREL AJAN PANELİ ——— */
+.agent-panel {
+  margin-bottom: 16px;
+}
+
+.agent-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  border-radius: 12px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.agent-not-detected {
+  background: rgba(231, 76, 60, 0.10);
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+}
+
+.agent-detecting {
+  background: rgba(231, 168, 66, 0.10);
+  border: 1px solid #e2a842;
+  color: #e2a842;
+}
+
+.agent-ready {
+  background: rgba(46, 204, 113, 0.10);
+  border: 1px solid #2ecc71;
+  color: #2ecc71;
+}
+
+.agent-help {
+  margin-top: 8px;
+  padding: 12px 16px;
+  background: rgba(255,255,255,0.04);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 12px;
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+.agent-help p {
+  margin: 0 0 10px 0;
+  color: #ccc;
+}
+
+.agent-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.agent-step {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.btn-small {
+  padding: 6px 14px;
+  font-size: 0.8rem;
+  border-radius: 8px;
+  text-decoration: none;
+}
+
 .agent-status {
   padding: 10px 16px;
   border-radius: 12px;
