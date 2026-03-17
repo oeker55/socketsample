@@ -169,6 +169,12 @@ async function switchSource(newStream) {
   localStream = newStream;
   document.getElementById('local-video').srcObject = newStream;
 
+  // Kontrol aktifse yeni monitör bilgisini sunucuya bildir
+  if (controlViewerId) {
+    const s = newVideoTrack?.getSettings();
+    if (s) socket.emit('set-active-monitor', { width: s.width, height: s.height });
+  }
+
   newStream.getVideoTracks()[0].onended = () => {
     document.getElementById('stop-btn').click();
   };
@@ -307,6 +313,14 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
 
   controlViewerId = pendingRequestViewerId;
   socket.emit('control-response', { viewerId: pendingRequestViewerId, granted: true });
+
+  // Paylaşılan monitörün çözünürlüğünü sunucuya bildir
+  const activeTrack = localStream?.getVideoTracks()[0];
+  if (activeTrack) {
+    const s = activeTrack.getSettings();
+    socket.emit('set-active-monitor', { width: s.width, height: s.height });
+  }
+
   pendingRequestViewerId = null;
   document.getElementById('control-notification').style.display = 'none';
   document.getElementById('control-active-bar').style.display = 'flex';

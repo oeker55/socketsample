@@ -23,6 +23,9 @@ class RemoteInput {
     this.screenHeight = 1080;
     this._cmdQueue = [];
     this._initDone = false;
+    // Çoklu monitör desteği
+    this.monitors = [];       // [{ x, y, w, h, primary }]
+    this.activeMonitor = null; // Aktif monitör { x, y, w, h }
   }
 
   init() {
@@ -77,10 +80,18 @@ class RemoteInput {
             this.ready = true;
             this.enabled = true;
             this._initDone = true;
-            console.log(`  ✅ Uzaktan kontrol hazır (${parts[0]}x${parts[1]})`);
+            console.log(`  ✅ Uzaktan kontrol hazır (birincil: ${parts[0]}x${parts[1]})`);
             // Kuyrukta bekleyen komutları gönder
             for (const cmd of this._cmdQueue) this._writeRaw(cmd);
             this._cmdQueue = [];
+          }
+        }
+        if (trimmed.startsWith('MON:')) {
+          // MON:x,y,w,h,isPrimary
+          const p = trimmed.slice(4).split(',').map(Number);
+          if (p.length === 5) {
+            this.monitors.push({ x: p[0], y: p[1], w: p[2], h: p[3], primary: !!p[4] });
+            console.log(`  📺 Monitör: ${p[2]}x${p[3]} konum(${p[0]},${p[1]})${p[4] ? ' [birincil]' : ''}`);
           }
         }
       }
@@ -96,7 +107,36 @@ class RemoteInput {
 
     // PowerShell'e tek satırlık komutlar gönder
     this._writeRaw(`Add-Type -MemberDefinition '${memberDef}' -Name NInput -Namespace Win32 -PassThru | Out-Null`);
+    // Monitörleri numarala
+    this._writeRaw(`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { $b = $_.Bounds; $p = if($_.Primary){1}else{0}; Write-Output "MON:$($b.X),$($b.Y),$($b.Width),$($b.Height),$p" }`);
     this._writeRaw('$w = [Win32.NInput]::GetSystemMetrics(0); $h = [Win32.NInput]::GetSystemMetrics(1); Write-Output "READY:$w,$h"');
+  }
+
+  // Paylaşılan monitörü çözünürlüğe göre eşle
+  setActiveMonitorByResolution(width, height) {
+    if (!width || !height || this.monitors.length === 0) return;
+    // Tam eşleşme ara
+    let match = this.monitors.find(m => m.w === width && m.h === height);
+    if (!match) {
+      // En yakın en-boy oranı eşleşmesi
+      const targetAR = width / height;
+      let bestDiff = Infinity;
+      for (const m of this.monitors) {
+        const diff = Math.abs((m.w / m.h) - targetAR);
+        if (diff < bestDiff) {
+          bestDiff = diff;
+          match = m;
+        }
+      }
+    }
+    if (match) {
+      this.activeMonitor = match;
+      console.log(`  🎯 Aktif monitör: ${match.w}x${match.h} konum(${match.x},${match.y})`);
+    }
+  }
+
+  getMonitors() {
+    return this.monitors;
   }
 
   _writeRaw(cmd) {
@@ -118,8 +158,18 @@ class RemoteInput {
     if (typeof nx !== 'number' || typeof ny !== 'number' || isNaN(nx) || isNaN(ny)) return;
     nx = Math.max(0, Math.min(1, nx));
     ny = Math.max(0, Math.min(1, ny));
-    const x = Math.round(nx * this.screenWidth);
-    const y = Math.round(ny * this.screenHeight);
+
+    let x, y;
+    if (this.activeMonitor) {
+      // Aktif monitörün sanal masaüstü koordinatlarına eşle
+      const m = this.activeMonitor;
+      x = Math.round(m.x + nx * m.w);
+      y = Math.round(m.y + ny * m.h);
+    } else {
+      // Geri dönüş: birincil ekran
+      x = Math.round(nx * this.screenWidth);
+      y = Math.round(ny * this.screenHeight);
+    }
     this._write(`[Win32.NInput]::SetCursorPos(${x}, ${y})`);
   }
 

@@ -50,6 +50,10 @@ app.get('/config.js', (req, res) => {
   res.send(`window.APP_CONFIG = ${JSON.stringify({ iceServers })};`);
 });
 
+app.get('/api/monitors', (req, res) => {
+  res.json({ monitors: remoteInput.getMonitors() });
+});
+
 // ——— Socket.IO Sinyalizasyon ———
 io.on('connection', (socket) => {
   // Odaya katıl
@@ -112,6 +116,14 @@ io.on('connection', (socket) => {
       io.to(viewerId).emit('control-granted');
     } else {
       io.to(viewerId).emit('control-denied');
+    }
+  });
+
+  // Yayıncı paylaşılan monitörü bildiriyor
+  socket.on('set-active-monitor', ({ width, height }) => {
+    if (socket.data.role !== 'broadcaster') return;
+    if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
+      remoteInput.setActiveMonitorByResolution(width, height);
     }
   });
 
