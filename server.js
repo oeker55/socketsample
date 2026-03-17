@@ -36,6 +36,13 @@ function buildIceServers() {
 
 const iceServers = buildIceServers();
 
+// ——— Uzaktan Kontrol Modülü ———
+const RemoteInput = require('./remote-input');
+const remoteInput = new RemoteInput();
+remoteInput.init();
+
+const controlSessions = {}; // roomId -> { viewerId }
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 app.get('/config.js', (req, res) => {
@@ -80,6 +87,91 @@ io.on('connection', (socket) => {
     socket.to(roomId).emit('chat-message', msg);
   });
 
+  // ——— Uzaktan Kontrol ———
+
+  // İzleyici kontrol istiyor
+  socket.on('control-request', ({ viewerName }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || socket.data.role !== 'viewer') return;
+    if (controlSessions[roomId]) {
+      socket.emit('control-denied');
+      return;
+    }
+    socket.to(roomId).emit('control-request', {
+      viewerId: socket.id,
+      viewerName: String(viewerName || '').slice(0, 30)
+    });
+  });
+
+  // Yayıncı yanıt veriyor
+  socket.on('control-response', ({ viewerId, granted }) => {
+    const roomId = socket.data.roomId;
+    if (!roomId || socket.data.role !== 'broadcaster') return;
+    if (granted) {
+      controlSessions[roomId] = { viewerId };
+      io.to(viewerId).emit('control-granted');
+    } else {
+      io.to(viewerId).emit('control-denied');
+    }
+  });
+
+  // Yayıncı kontrolü geri alıyor
+  socket.on('control-revoke', () => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    const session = controlSessions[roomId];
+    if (session) {
+      io.to(session.viewerId).emit('control-revoked');
+      delete controlSessions[roomId];
+    }
+  });
+
+  // İzleyici kontrolü bırakıyor
+  socket.on('control-release', () => {
+    const roomId = socket.data.roomId;
+    if (!roomId) return;
+    const session = controlSessions[roomId];
+    if (session && session.viewerId === socket.id) {
+      socket.to(roomId).emit('control-released');
+      delete controlSessions[roomId];
+    }
+  });
+
+  // Uzak giriş olayları (fare/klavye)
+  socket.on('remote-input', (data) => {
+    const roomId = socket.data.roomId;
+    if (!roomId) { console.log('  ⚠ remote-input: roomId yok'); return; }
+    const session = controlSessions[roomId];
+    if (!session || session.viewerId !== socket.id) {
+      console.log('  ⚠ remote-input: yetki yok', { session: !!session, viewerId: session?.viewerId, socketId: socket.id });
+      return;
+    }
+    if (!remoteInput.enabled) {
+      console.log('  ⚠ remote-input geldi ama remoteInput hazır değil (enabled=false)');
+      return;
+    }
+    if (data.type === 'mousedown' || data.type === 'keydown') {
+      console.log('  🎮 remote-input:', data.type, data.nx?.toFixed(2), data.ny?.toFixed(2), data.button || data.keyCode);
+    }
+
+    const t = data.type;
+    if (t === 'mousemove') {
+      remoteInput.moveMouse(data.nx, data.ny);
+    } else if (t === 'mousedown') {
+      remoteInput.moveMouse(data.nx, data.ny);
+      remoteInput.mouseDown(data.button);
+    } else if (t === 'mouseup') {
+      remoteInput.moveMouse(data.nx, data.ny);
+      remoteInput.mouseUp(data.button);
+    } else if (t === 'scroll') {
+      remoteInput.scroll(data.deltaY);
+    } else if (t === 'keydown') {
+      remoteInput.keyDown(data.keyCode);
+    } else if (t === 'keyup') {
+      remoteInput.keyUp(data.keyCode);
+    }
+  });
+
   // Yayıncı ayrıldı
   socket.on('broadcaster-left', () => {
     const roomId = socket.data.roomId;
@@ -90,6 +182,19 @@ io.on('connection', (socket) => {
   socket.on('disconnect', () => {
     const roomId = socket.data.roomId;
     if (!roomId) return;
+
+    // Kontrol oturumunu temizle
+    const session = controlSessions[roomId];
+    if (session) {
+      if (socket.data.role === 'viewer' && session.viewerId === socket.id) {
+        socket.to(roomId).emit('control-released');
+        delete controlSessions[roomId];
+      } else if (socket.data.role === 'broadcaster') {
+        io.to(session.viewerId).emit('control-revoked');
+        delete controlSessions[roomId];
+      }
+    }
+
     if (socket.data.role === 'viewer') {
       socket.to(roomId).emit('viewer-left', { viewerId: socket.id });
     } else if (socket.data.role === 'broadcaster') {

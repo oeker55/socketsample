@@ -85,6 +85,15 @@ function setupSocketEvents() {
       viewerCount = Math.max(0, viewerCount - 1);
       document.getElementById('viewer-count').textContent = viewerCount;
     }
+    // Kontrol oturumunu temizle
+    if (viewerId === controlViewerId) {
+      controlViewerId = null;
+      document.getElementById('control-active-bar').style.display = 'none';
+    }
+    if (viewerId === pendingRequestViewerId) {
+      pendingRequestViewerId = null;
+      document.getElementById('control-notification').style.display = 'none';
+    }
   });
 }
 
@@ -239,6 +248,15 @@ document.getElementById('stop-btn').addEventListener('click', () => {
   viewerCount = 0;
   document.getElementById('viewer-count').textContent = 0;
 
+  // Kontrol oturumunu temizle
+  if (controlViewerId) {
+    socket.emit('control-revoke');
+    controlViewerId = null;
+    document.getElementById('control-active-bar').style.display = 'none';
+  }
+  pendingRequestViewerId = null;
+  document.getElementById('control-notification').style.display = 'none';
+
   // Yayıncı ayrıldığını bildir
   if (socket.connected) {
     socket.emit('broadcaster-left');
@@ -246,4 +264,71 @@ document.getElementById('stop-btn').addEventListener('click', () => {
 
   document.getElementById('stream-section').style.display = 'none';
   document.getElementById('setup-section').style.display = 'block';
+});
+
+// ——— Uzaktan Kontrol (Yayıncı tarafı) ———
+let controlViewerId = null;
+let pendingRequestViewerId = null;
+
+// İzleyiciden kontrol isteği geldi
+socket.on('control-request', ({ viewerId, viewerName }) => {
+  if (controlViewerId) return; // zaten biri kontrol ediyor
+  pendingRequestViewerId = viewerId;
+  document.getElementById('control-requester-name').textContent =
+    (viewerName || 'Bir izleyici') + ' kontrol istiyor';
+  document.getElementById('control-notification').style.display = 'block';
+});
+
+// Kabul
+document.getElementById('control-accept-btn').addEventListener('click', async () => {
+  if (!pendingRequestViewerId) return;
+
+  // Uzaktan kontrol için tüm ekranın paylaşılması gerekir
+  const videoTrack = localStream?.getVideoTracks()[0];
+  const settings = videoTrack?.getSettings();
+  const isFullScreen = settings?.displaySurface === 'monitor';
+
+  if (!isFullScreen) {
+    try {
+      const mediaDevices = ensureMediaDevices('Ekran paylaşımı');
+      const stream = await mediaDevices.getDisplayMedia({
+        video: { displaySurface: 'monitor' },
+        audio: true
+      });
+      await switchSource(stream);
+    } catch (err) {
+      if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
+        alert('⚠️ Uzaktan kontrol için tüm ekranın paylaşılması gerekir.\nLütfen "Tüm Ekran" seçeneğini seçin.');
+        return;
+      }
+      console.warn('Tam ekran paylaşımına geçilemedi:', err.message);
+    }
+  }
+
+  controlViewerId = pendingRequestViewerId;
+  socket.emit('control-response', { viewerId: pendingRequestViewerId, granted: true });
+  pendingRequestViewerId = null;
+  document.getElementById('control-notification').style.display = 'none';
+  document.getElementById('control-active-bar').style.display = 'flex';
+});
+
+// Reddet
+document.getElementById('control-deny-btn').addEventListener('click', () => {
+  if (!pendingRequestViewerId) return;
+  socket.emit('control-response', { viewerId: pendingRequestViewerId, granted: false });
+  pendingRequestViewerId = null;
+  document.getElementById('control-notification').style.display = 'none';
+});
+
+// Kontrolü geri al
+document.getElementById('control-revoke-btn').addEventListener('click', () => {
+  socket.emit('control-revoke');
+  controlViewerId = null;
+  document.getElementById('control-active-bar').style.display = 'none';
+});
+
+// İzleyici kontrolü bıraktı
+socket.on('control-released', () => {
+  controlViewerId = null;
+  document.getElementById('control-active-bar').style.display = 'none';
 });

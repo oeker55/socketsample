@@ -27,17 +27,16 @@
         <div id="unmute-overlay">
           <button id="unmute-btn">🔊 Sesi Aç &amp; Başlat</button>
         </div>
-        <!-- Kontrol çubuğu -->
-        <div class="video-controls">
-          <button id="fullscreen-btn" class="ctrl-btn" title="Tam Ekran">
-            <svg id="fs-icon-expand" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22">
-              <path d="M3 3h6v2H5v4H3V3zm12 0h6v6h-2V5h-4V3zM3 13h2v4h4v2H3v-6zm16 4h-4v2h6v-6h-2v4z"/>
-            </svg>
-            <svg id="fs-icon-shrink" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" width="22" height="22" style="display:none">
-              <path d="M5 16h3v3h2v-5H5v2zm3-8H5V6h2V3H5v2H3v3h2V8h3V5h2V3h-2v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2V3h-2v5h5V6h-3z"/>
-            </svg>
-          </button>
-        </div>
+        <!-- Uzaktan kontrol yakalama katmanı (fare olayları için) -->
+        <div id="control-overlay" class="control-overlay" style="display:none;"></div>
+      </div>
+
+      <!-- Uzaktan Kontrol Çubuğu -->
+      <div class="control-bar" id="control-bar">
+        <button id="request-control-btn" class="btn btn-secondary">🎮 Kontrol İste</button>
+        <button id="release-control-btn" class="btn btn-danger" style="display:none;">🚫 Kontrolü Bırak</button>
+        <span id="control-status" class="control-status" style="display:none;"></span>
+        <button id="fullscreen-btn" class="btn btn-secondary" title="Tam Ekran">⛶ Tam Ekran</button>
       </div>
 
       <!-- Chat -->

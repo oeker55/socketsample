@@ -120,6 +120,7 @@ if (!roomId) {
     document.getElementById('waiting-section').style.display = 'block';
     document.getElementById('loading-spinner').style.display = 'none';
     setStatus('📴 Yayın sona erdi.');
+    deactivateControl();
   });
 
   // Odaya katıl ve yayıncıya bildir
@@ -140,8 +141,6 @@ if (!roomId) {
 
 // ——— Tam Ekran ———
 const fullscreenBtn = document.getElementById('fullscreen-btn');
-const fsExpand = document.getElementById('fs-icon-expand');
-const fsShrink = document.getElementById('fs-icon-shrink');
 const videoWrapper = document.getElementById('video-wrapper');
 
 fullscreenBtn.addEventListener('click', () => {
@@ -157,8 +156,7 @@ document.addEventListener('webkitfullscreenchange', updateFsIcon);
 
 function updateFsIcon() {
   const isFs = !!document.fullscreenElement;
-  fsExpand.style.display = isFs ? 'none' : 'inline';
-  fsShrink.style.display = isFs ? 'inline' : 'none';
+  fullscreenBtn.textContent = isFs ? '⛶ Tam Ekrandan Çık' : '⛶ Tam Ekran';
 }
 
 // ——— Ses Aç butonu ———
@@ -169,3 +167,201 @@ document.getElementById('unmute-btn').addEventListener('click', () => {
     document.getElementById('unmute-overlay').style.display = 'none';
   });
 });
+
+// ——— Uzaktan Kontrol (İzleyici tarafı) ———
+let controlActive = false;
+let pendingControlReq = false;
+let inputHandlersAttached = false;
+
+// Kontrol iste
+document.getElementById('request-control-btn').addEventListener('click', () => {
+  if (controlActive || pendingControlReq) return;
+  const nameEl = document.getElementById('chat-name');
+  const viewerName = (nameEl && nameEl.value.trim()) || 'İsimsiz';
+  socket.emit('control-request', { viewerName });
+  pendingControlReq = true;
+  const btn = document.getElementById('request-control-btn');
+  btn.textContent = '⏳ İstek gönderildi...';
+  btn.disabled = true;
+});
+
+// Kontrolü bırak
+document.getElementById('release-control-btn').addEventListener('click', () => {
+  socket.emit('control-release');
+  deactivateControl();
+});
+
+// Kontrol verildi
+socket.on('control-granted', () => {
+  controlActive = true;
+  pendingControlReq = false;
+  document.getElementById('request-control-btn').style.display = 'none';
+  document.getElementById('release-control-btn').style.display = 'inline-block';
+  document.getElementById('control-status').textContent = '🟢 Kontrol sizde';
+  document.getElementById('control-status').style.display = 'inline';
+
+  const wrapper = document.getElementById('video-wrapper');
+  wrapper.classList.add('control-mode');
+
+  // Şeffaf overlay'ı aç — fare olaylarını yakalar
+  document.getElementById('control-overlay').style.display = 'block';
+
+  let badge = document.getElementById('control-mode-badge');
+  if (!badge) {
+    badge = document.createElement('div');
+    badge.id = 'control-mode-badge';
+    badge.className = 'control-mode-badge';
+    badge.textContent = '🎮 KONTROL';
+    wrapper.appendChild(badge);
+  }
+  badge.style.display = 'block';
+
+  setupInputCapture();
+});
+
+// Kontrol reddedildi
+socket.on('control-denied', () => {
+  pendingControlReq = false;
+  const btn = document.getElementById('request-control-btn');
+  btn.textContent = '🎮 Kontrol İste';
+  btn.disabled = false;
+});
+
+// Kontrol geri alındı
+socket.on('control-revoked', () => {
+  deactivateControl();
+});
+
+function deactivateControl() {
+  controlActive = false;
+  pendingControlReq = false;
+  teardownInputCapture();
+
+  document.getElementById('request-control-btn').style.display = 'inline-block';
+  document.getElementById('request-control-btn').textContent = '🎮 Kontrol İste';
+  document.getElementById('request-control-btn').disabled = false;
+  document.getElementById('release-control-btn').style.display = 'none';
+  document.getElementById('control-status').style.display = 'none';
+
+  const wrapper = document.getElementById('video-wrapper');
+  wrapper.classList.remove('control-mode');
+  document.getElementById('control-overlay').style.display = 'none';
+  const badge = document.getElementById('control-mode-badge');
+  if (badge) badge.style.display = 'none';
+}
+
+// ——— Giriş Yakalama ———
+function setupInputCapture() {
+  if (inputHandlersAttached) return;
+  const overlay = document.getElementById('control-overlay');
+  overlay.addEventListener('mousemove', handleMouseMove);
+  overlay.addEventListener('mousedown', handleMouseDown);
+  overlay.addEventListener('mouseup', handleMouseUp);
+  overlay.addEventListener('contextmenu', handleContextMenu);
+  overlay.addEventListener('wheel', handleWheel, { passive: false });
+  document.addEventListener('keydown', handleKeyDown);
+  document.addEventListener('keyup', handleKeyUp);
+  inputHandlersAttached = true;
+}
+
+function teardownInputCapture() {
+  if (!inputHandlersAttached) return;
+  const overlay = document.getElementById('control-overlay');
+  overlay.removeEventListener('mousemove', handleMouseMove);
+  overlay.removeEventListener('mousedown', handleMouseDown);
+  overlay.removeEventListener('mouseup', handleMouseUp);
+  overlay.removeEventListener('contextmenu', handleContextMenu);
+  overlay.removeEventListener('wheel', handleWheel);
+  document.removeEventListener('keydown', handleKeyDown);
+  document.removeEventListener('keyup', handleKeyUp);
+  inputHandlersAttached = false;
+}
+
+function getRelativeCoords(e) {
+  const videoEl = document.getElementById('remote-video');
+  const rect = videoEl.getBoundingClientRect();
+  const vw = videoEl.videoWidth || 1;
+  const vh = videoEl.videoHeight || 1;
+  const ew = rect.width;
+  const eh = rect.height;
+
+  // object-fit: contain hesaplaması
+  const videoAR = vw / vh;
+  const elemAR = ew / eh;
+  let displayW, displayH, offX, offY;
+
+  if (videoAR > elemAR) {
+    displayW = ew;
+    displayH = ew / videoAR;
+    offX = 0;
+    offY = (eh - displayH) / 2;
+  } else {
+    displayH = eh;
+    displayW = eh * videoAR;
+    offX = (ew - displayW) / 2;
+    offY = 0;
+  }
+
+  const localX = e.clientX - rect.left;
+  const localY = e.clientY - rect.top;
+  const nx = (localX - offX) / displayW;
+  const ny = (localY - offY) / displayH;
+
+  return {
+    nx: Math.max(0, Math.min(1, nx)),
+    ny: Math.max(0, Math.min(1, ny))
+  };
+}
+
+let lastMoveTs = 0;
+function handleMouseMove(e) {
+  if (!controlActive) return;
+  const now = Date.now();
+  if (now - lastMoveTs < 33) return; // ~30fps throttle
+  lastMoveTs = now;
+  const { nx, ny } = getRelativeCoords(e);
+  socket.emit('remote-input', { type: 'mousemove', nx, ny });
+}
+
+function handleMouseDown(e) {
+  if (!controlActive) return;
+  e.preventDefault();
+  const { nx, ny } = getRelativeCoords(e);
+  const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
+  socket.emit('remote-input', { type: 'mousedown', nx, ny, button });
+}
+
+function handleMouseUp(e) {
+  if (!controlActive) return;
+  e.preventDefault();
+  const { nx, ny } = getRelativeCoords(e);
+  const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
+  socket.emit('remote-input', { type: 'mouseup', nx, ny, button });
+}
+
+function handleContextMenu(e) {
+  if (!controlActive) return;
+  e.preventDefault();
+}
+
+function handleWheel(e) {
+  if (!controlActive) return;
+  e.preventDefault();
+  socket.emit('remote-input', { type: 'scroll', deltaY: e.deltaY });
+}
+
+function handleKeyDown(e) {
+  if (!controlActive) return;
+  const tag = (document.activeElement || {}).tagName || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  socket.emit('remote-input', { type: 'keydown', keyCode: e.keyCode });
+}
+
+function handleKeyUp(e) {
+  if (!controlActive) return;
+  const tag = (document.activeElement || {}).tagName || '';
+  if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+  e.preventDefault();
+  socket.emit('remote-input', { type: 'keyup', keyCode: e.keyCode });
+}
