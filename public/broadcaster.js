@@ -257,6 +257,58 @@ const ICE_SERVERS = {
   }
 })();
 
+// ——— Bağlantı Tipi Algılama (Yayıncı) ———
+let broadcasterConnInterval = null;
+
+async function checkBroadcasterConnectionTypes() {
+  const pcEntries = Object.entries(peerConnections);
+  if (pcEntries.length === 0) {
+    const card = document.getElementById('connection-type-card');
+    if (card) card.style.display = 'none';
+    return;
+  }
+  let hasRelay = false;
+  let hasDirect = false;
+  for (const [vid, pc] of pcEntries) {
+    if (pc.connectionState === 'closed' || pc.iceConnectionState === 'new') continue;
+    try {
+      const stats = await pc.getStats();
+      let activePair = null;
+      stats.forEach(r => {
+        if (r.type === 'candidate-pair' && r.state === 'succeeded') activePair = r;
+      });
+      if (!activePair) continue;
+      let localCand = null, remoteCand = null;
+      stats.forEach(r => {
+        if (r.id === activePair.localCandidateId) localCand = r;
+        if (r.id === activePair.remoteCandidateId) remoteCand = r;
+      });
+      if (localCand?.candidateType === 'relay' || remoteCand?.candidateType === 'relay') {
+        hasRelay = true;
+      } else {
+        hasDirect = true;
+      }
+    } catch (e) { /* sessiz */ }
+  }
+  const card = document.getElementById('connection-type-card');
+  const val = document.getElementById('connection-type-value');
+  if (!card || !val) return;
+  card.style.display = 'flex';
+  if (hasRelay && hasDirect) {
+    val.textContent = '⚠️ Karışık';
+    val.style.color = '#e2a842';
+    val.title = 'Bazı izleyiciler TURN (ücretli), bazıları doğrudan bağlı';
+  } else if (hasRelay) {
+    val.textContent = '💰 TURN';
+    val.style.color = '#e74c3c';
+    val.title = 'Tüm bağlantılar TURN sunucusu üzerinden (ücretli)';
+  } else if (hasDirect) {
+    val.textContent = '✅ Doğrudan';
+    val.style.color = '#2ecc71';
+    val.title = 'Tüm bağlantılar doğrudan/STUN (ücretsiz)';
+  }
+}
+
 let localStream = null;
 let peerConnections = {}; // viewerId -> RTCPeerConnection
 let pendingCandidatesMap = {}; // viewerId -> [] (answer gelmeden önce ICE tamponu)
@@ -365,6 +417,21 @@ async function handleNewViewer(viewerId) {
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
 
+  // Video kalitesi - yüksek bitrate ayarla
+  try {
+    const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+    if (videoSender) {
+      const params = videoSender.getParameters();
+      if (!params.encodings || params.encodings.length === 0) {
+        params.encodings = [{}];
+      }
+      params.encodings[0].maxBitrate = 8000000; // 8 Mbps
+      await videoSender.setParameters(params);
+    }
+  } catch (e) {
+    console.warn('Bitrate ayarlama hatası:', e);
+  }
+
   pc.onicecandidate = (e) => {
     if (e.candidate) {
       socket.emit('ice-candidate', { fromId: socket.id, targetId: viewerId, candidate: e.candidate });
@@ -399,6 +466,12 @@ async function handleNewViewer(viewerId) {
 
   viewerCount++;
   document.getElementById('viewer-count').textContent = viewerCount;
+
+  // Bağlantı tipi kontrolünü başlat
+  if (!broadcasterConnInterval) {
+    broadcasterConnInterval = setInterval(checkBroadcasterConnectionTypes, 5000);
+  }
+  setTimeout(checkBroadcasterConnectionTypes, 3000);
 }
 
 // ——— Stream başlatıcı yardımcı ———
@@ -464,7 +537,10 @@ async function switchSource(newStream) {
 document.getElementById('start-camera-btn').addEventListener('click', async () => {
   try {
     const mediaDevices = ensureMediaDevices('Kamera/mikrofon erişimi');
-    const stream = await mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await mediaDevices.getUserMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      audio: true
+    });
     await startStream(stream);
   } catch (err) {
     alert('❌ Kamera/mikrofon erişimi sağlanamadı:\n' + err.message);
@@ -478,7 +554,10 @@ document.getElementById('start-screen-btn').addEventListener('click', async () =
     if (!mediaDevices.getDisplayMedia) {
       throw new Error('Bu tarayıcı ekran paylaşımını desteklemiyor. Chrome, Edge veya HTTPS üzerinden çalışan masaustu bir tarayıcı kullanın.');
     }
-    const stream = await mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const stream = await mediaDevices.getDisplayMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      audio: true
+    });
     await startStream(stream);
   } catch (err) {
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
@@ -491,7 +570,10 @@ document.getElementById('start-screen-btn').addEventListener('click', async () =
 document.getElementById('switch-camera-btn').addEventListener('click', async () => {
   try {
     const mediaDevices = ensureMediaDevices('Kamera/mikrofon erişimi');
-    const stream = await mediaDevices.getUserMedia({ video: true, audio: true });
+    const stream = await mediaDevices.getUserMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      audio: true
+    });
     await switchSource(stream);
   } catch (err) {
     alert('❌ Kamera erişimi sağlanamadı:\n' + err.message);
@@ -505,7 +587,10 @@ document.getElementById('switch-screen-btn').addEventListener('click', async () 
     if (!mediaDevices.getDisplayMedia) {
       throw new Error('Bu tarayıcı ekran paylaşımını desteklemiyor. Chrome, Edge veya HTTPS üzerinden çalışan masaustu bir tarayıcı kullanın.');
     }
-    const stream = await mediaDevices.getDisplayMedia({ video: true, audio: true });
+    const stream = await mediaDevices.getDisplayMedia({
+      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
+      audio: true
+    });
     await switchSource(stream);
   } catch (err) {
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
@@ -542,6 +627,14 @@ document.getElementById('stop-btn').addEventListener('click', () => {
   }
   pendingRequestViewerId = null;
   document.getElementById('control-notification').style.display = 'none';
+
+  // Bağlantı tipi kontrolünü durdur
+  if (broadcasterConnInterval) {
+    clearInterval(broadcasterConnInterval);
+    broadcasterConnInterval = null;
+  }
+  const connCard = document.getElementById('connection-type-card');
+  if (connCard) connCard.style.display = 'none';
 
   // Yayıncı ayrıldığını bildir
   if (socket.connected) {

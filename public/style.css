@@ -733,3 +733,41 @@ video {
 @media (max-width: 520px) {
   .chat-name-input { width: 80px; }
 }
+
+/* ——— BAĞLANTI TİPİ GÖSTERGESİ ——— */
+.connection-type-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 16px;
+  border-radius: 12px;
+  margin-bottom: 16px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  transition: all 0.3s ease;
+}
+
+.connection-type-bar.conn-relay {
+  background: rgba(231, 76, 60, 0.12);
+  border: 1px solid #e74c3c;
+  color: #e74c3c;
+}
+
+.connection-type-bar.conn-direct {
+  background: rgba(46, 204, 113, 0.12);
+  border: 1px solid #2ecc71;
+  color: #2ecc71;
+}
+
+.connection-type-bar.conn-checking {
+  background: rgba(231, 168, 66, 0.10);
+  border: 1px solid #e2a842;
+  color: #e2a842;
+}
+
+.connection-type-details {
+  font-size: 0.78rem;
+  font-weight: 400;
+  opacity: 0.8;
+  margin-left: 4px;
+}

@@ -153,6 +153,10 @@ if (!roomId) {
           setStatus('📡 Bağlantı kuruluyor...');
         } else if (iceState === 'connected' || iceState === 'completed') {
           setStatus('✅ Bağlandı');
+          // Bağlantı tipi kontrolünü başlat
+          checkConnectionType();
+          if (connectionCheckInterval) clearInterval(connectionCheckInterval);
+          connectionCheckInterval = setInterval(checkConnectionType, 5000);
         } else if (iceState === 'failed') {
           console.warn('🧊 ICE başarısız — TURN sunucuları erişilebilir olmayabilir');
           setStatus('❌ Bağlantı kurulamadı — güvenlik duvarı veya ağ sorunu olabilir');
@@ -205,6 +209,10 @@ if (!roomId) {
     document.getElementById('loading-spinner').style.display = 'none';
     setStatus('📴 Yayın sona erdi.');
     deactivateControl();
+    // Bağlantı tipi göstergesini temizle
+    if (connectionCheckInterval) { clearInterval(connectionCheckInterval); connectionCheckInterval = null; }
+    const connBar = document.getElementById('connection-type-bar');
+    if (connBar) connBar.style.display = 'none';
   });
 
   // Otomatik yeniden bağlanma
@@ -235,6 +243,58 @@ if (!roomId) {
       socket.emit('viewer-left', { viewerId: socket.id });
     }
   });
+}
+
+// ——— Bağlantı Tipi Algılama ———
+let connectionCheckInterval = null;
+
+async function checkConnectionType() {
+  if (!peerConnection || peerConnection.connectionState === 'closed') return;
+  try {
+    const stats = await peerConnection.getStats();
+    let activePair = null;
+    stats.forEach(report => {
+      if (report.type === 'candidate-pair' && report.state === 'succeeded') {
+        activePair = report;
+      }
+    });
+    if (!activePair) return;
+
+    let localCandidate = null;
+    let remoteCandidate = null;
+    stats.forEach(report => {
+      if (report.id === activePair.localCandidateId) localCandidate = report;
+      if (report.id === activePair.remoteCandidateId) remoteCandidate = report;
+    });
+
+    const localType = localCandidate?.candidateType || '?';
+    const remoteType = remoteCandidate?.candidateType || '?';
+    const isRelay = localType === 'relay' || remoteType === 'relay';
+    const protocol = localCandidate?.protocol || '';
+
+    const bar = document.getElementById('connection-type-bar');
+    const icon = document.getElementById('connection-type-icon');
+    const text = document.getElementById('connection-type-text');
+    if (!bar) return;
+
+    bar.style.display = 'flex';
+    if (isRelay) {
+      bar.className = 'connection-type-bar conn-relay';
+      icon.textContent = '💰';
+      text.innerHTML = 'TURN Relay (Ücretli)' +
+        '<span class="connection-type-details"> — Veri TURN sunucusu üzerinden aktarılıyor (' + protocol.toUpperCase() + ')</span>';
+    } else {
+      bar.className = 'connection-type-bar conn-direct';
+      icon.textContent = '✅';
+      const typeLabel = localType === 'host' ? 'Doğrudan (P2P)' : 'STUN';
+      text.innerHTML = typeLabel + ' (Ücretsiz)' +
+        '<span class="connection-type-details"> — ' +
+        (localType === 'host' ? 'Doğrudan bağlantı kuruldu' : 'STUN ile NAT geçişi yapıldı') +
+        ' (' + protocol.toUpperCase() + ')</span>';
+    }
+  } catch (e) {
+    console.warn('Bağlantı tipi kontrol hatası:', e);
+  }
 }
 
 // ——— Tam Ekran ———
