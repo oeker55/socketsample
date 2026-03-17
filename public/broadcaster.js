@@ -33,21 +33,56 @@ async function connectAgentToRoom(roomId) {
   }
 }
 
-async function sendMonitorToAgent(width, height) {
-  if (!agentAvailable) return;
+async function findMonitorIndex(width, height) {
+  if (!agentAvailable) return undefined;
   try {
-    await fetch(AGENT_LOCAL_URL + '/set-monitor', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ width, height })
-    });
-  } catch (e) { /* sessiz hata */ }
+    const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
+    if (!res.ok) return undefined;
+    const status = await res.json();
+    const monitors = status.monitors || [];
+    // 1. Tam eşleşme
+    let idx = monitors.findIndex(m => m.w === width && m.h === height);
+    if (idx === -1) {
+      // 2. %5 toleransla eşleşme
+      idx = monitors.findIndex(m => {
+        const wR = Math.abs(m.w - width) / Math.max(m.w, width);
+        const hR = Math.abs(m.h - height) / Math.max(m.h, height);
+        return wR < 0.05 && hR < 0.05;
+      });
+    }
+    if (idx === -1) {
+      // 3. En yakın piksel alanı
+      const targetArea = width * height;
+      let bestDiff = Infinity;
+      monitors.forEach((m, i) => {
+        const diff = Math.abs((m.w * m.h) - targetArea);
+        if (diff < bestDiff) { bestDiff = diff; idx = i; }
+      });
+    }
+    return idx >= 0 ? idx : undefined;
+  } catch (e) { return undefined; }
+}
+
+async function sendMonitorInfo(width, height) {
+  const monitorIndex = await findMonitorIndex(width, height);
+  socket.emit('set-active-monitor', { width, height, monitorIndex });
+  // Ajana da doğrudan bildir
+  if (agentAvailable) {
+    try {
+      await fetch(AGENT_LOCAL_URL + '/set-monitor', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ width, height, monitorIndex })
+      });
+    } catch (e) { /* sessiz */ }
+  }
 }
 
 function updateAgentStatus(detected, connected) {
   const el = document.getElementById('agent-status');
   if (!el) return;
-  if (!detected) {
+  // Ajan durumu sadece kontrol aktif veya talep edildiğinde gösterilir
+  if (!detected || !controlViewerId) {
     el.style.display = 'none';
   } else {
     el.style.display = 'block';
@@ -56,9 +91,21 @@ function updateAgentStatus(detected, connected) {
   }
 }
 
-// Sayfa yüklendiginde ve periyodik olarak ajanı kontrol et
-setInterval(checkLocalAgent, 5000);
-checkLocalAgent();
+// Ajan kontrolü sessizce yapılır, UI göstermez (sadece iç durum güncellenir)
+async function silentAgentCheck() {
+  try {
+    const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
+    if (res.ok) {
+      agentAvailable = true;
+      return;
+    }
+  } catch (e) { /* ajan çalışmıyor */ }
+  agentAvailable = false;
+}
+
+// Periyodik kontrol — sessiz (UI göstermez)
+setInterval(silentAgentCheck, 5000);
+silentAgentCheck();
 
 // ——— Socket.IO Bağlantısı ———
 const socket = io();
@@ -203,9 +250,6 @@ async function startStream(stream) {
   currentRoomId = roomId;
   socket.emit('join-room', roomId, 'broadcaster');
 
-  // Yerel ajana oda bilgisini gönder
-  connectAgentToRoom(roomId);
-
   const link = `${window.location.origin}/viewer.html?room=${roomId}`;
   document.getElementById('share-link').value = link;
   // Chat'i yayıncı olarak başlat
@@ -238,8 +282,7 @@ async function switchSource(newStream) {
   if (controlViewerId) {
     const s = newVideoTrack?.getSettings();
     if (s) {
-      socket.emit('set-active-monitor', { width: s.width, height: s.height });
-      sendMonitorToAgent(s.width, s.height);
+      await sendMonitorInfo(s.width, s.height);
     }
   }
 
@@ -379,6 +422,12 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
     }
   }
 
+  // Yerel ajanı kontrol isteği kabul edildiğinde bağla
+  await checkLocalAgent();
+  if (agentAvailable && currentRoomId) {
+    await connectAgentToRoom(currentRoomId);
+  }
+
   controlViewerId = pendingRequestViewerId;
   socket.emit('control-response', { viewerId: pendingRequestViewerId, granted: true });
 
@@ -386,8 +435,7 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
   const activeTrack = localStream?.getVideoTracks()[0];
   if (activeTrack) {
     const s = activeTrack.getSettings();
-    socket.emit('set-active-monitor', { width: s.width, height: s.height });
-    sendMonitorToAgent(s.width, s.height);
+    await sendMonitorInfo(s.width, s.height);
   }
 
   pendingRequestViewerId = null;

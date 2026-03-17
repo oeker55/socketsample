@@ -115,17 +115,36 @@ class RemoteInput {
     this._writeRaw('$w = [Win32.NInput]::GetSystemMetrics(0); $h = [Win32.NInput]::GetSystemMetrics(1); Write-Output "READY:$w,$h"');
   }
 
+  // Monitörü indeks ile ayarla (en güvenilir yöntem)
+  setActiveMonitorByIndex(index) {
+    if (typeof index !== 'number' || index < 0 || index >= this.monitors.length) return;
+    this.activeMonitor = this.monitors[index];
+    const m = this.activeMonitor;
+    console.log(`  🎯 Aktif monitör [${index}]: ${m.w}x${m.h} konum(${m.x},${m.y})`);
+  }
+
   // Paylaşılan monitörü çözünürlüğe göre eşle
   setActiveMonitorByResolution(width, height) {
     if (!width || !height || this.monitors.length === 0) return;
-    // Tam eşleşme ara
+    // 1. Tam eşleşme ara
     let match = this.monitors.find(m => m.w === width && m.h === height);
     if (!match) {
-      // En yakın en-boy oranı eşleşmesi
-      const targetAR = width / height;
+      // 2. %5 toleransla çözünürlük eşleşmesi (DPI farkları için)
+      for (const m of this.monitors) {
+        const wRatio = Math.abs(m.w - width) / Math.max(m.w, width);
+        const hRatio = Math.abs(m.h - height) / Math.max(m.h, height);
+        if (wRatio < 0.05 && hRatio < 0.05) {
+          match = m;
+          break;
+        }
+      }
+    }
+    if (!match) {
+      // 3. En yakın piksel alanı eşleşmesi (en-boy oranı yerine)
+      const targetArea = width * height;
       let bestDiff = Infinity;
       for (const m of this.monitors) {
-        const diff = Math.abs((m.w / m.h) - targetAR);
+        const diff = Math.abs((m.w * m.h) - targetArea);
         if (diff < bestDiff) {
           bestDiff = diff;
           match = m;

@@ -124,13 +124,17 @@ io.on('connection', (socket) => {
   });
 
   // Yayıncı paylaşılan monitörü bildiriyor
-  socket.on('set-active-monitor', ({ width, height }) => {
+  socket.on('set-active-monitor', ({ width, height, monitorIndex }) => {
     if (socket.data.role !== 'broadcaster') return;
     if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) return;
 
     // Yerelde çalışıyorsa doğrudan ayarla
     if (remoteInput.enabled) {
-      remoteInput.setActiveMonitorByResolution(width, height);
+      if (typeof monitorIndex === 'number') {
+        remoteInput.setActiveMonitorByIndex(monitorIndex);
+      } else {
+        remoteInput.setActiveMonitorByResolution(width, height);
+      }
     }
     // Ajana da ilet
     const roomId = socket.data.roomId;
@@ -140,7 +144,7 @@ io.on('connection', (socket) => {
         for (const sid of room) {
           const s = io.sockets.sockets.get(sid);
           if (s && s.data.role === 'agent') {
-            s.emit('set-active-monitor', { width, height });
+            s.emit('set-active-monitor', { width, height, monitorIndex });
           }
         }
       }

@@ -7,7 +7,7 @@
     "start": "node server.js",
     "dev": "nodemon server.js",
     "agent": "node local-agent.js",
-    "build-agent": "npx pkg local-agent.js --targets node18-win-x64 --output agent.exe --compress GZip"
+    "build-agent": "npx @yao-pkg/pkg local-agent.js --targets node18-win-x64 --output agent.exe --compress GZip"
   },
   "dependencies": {
     "express": "^4.18.2",

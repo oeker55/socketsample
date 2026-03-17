@@ -84,7 +84,7 @@ const localServer = http.createServer((req, res) => {
     return;
   }
 
-  // POST /set-monitor — monitör çözünürlüğü
+  // POST /set-monitor — monitör çözünürlüğü veya indeksi
   if (req.url === '/set-monitor' && req.method === 'POST') {
     let body = '';
     req.on('data', (chunk) => {
@@ -93,8 +93,10 @@ const localServer = http.createServer((req, res) => {
     });
     req.on('end', () => {
       try {
-        const { width, height } = JSON.parse(body);
-        if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
+        const { width, height, monitorIndex } = JSON.parse(body);
+        if (typeof monitorIndex === 'number') {
+          remoteInput.setActiveMonitorByIndex(monitorIndex);
+        } else if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
           remoteInput.setActiveMonitorByResolution(width, height);
         }
         res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -218,8 +220,10 @@ function connectToRemoteServer(url, roomId) {
     }
   });
 
-  remoteSocket.on('set-active-monitor', ({ width, height }) => {
-    if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
+  remoteSocket.on('set-active-monitor', ({ width, height, monitorIndex }) => {
+    if (typeof monitorIndex === 'number') {
+      remoteInput.setActiveMonitorByIndex(monitorIndex);
+    } else if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
       remoteInput.setActiveMonitorByResolution(width, height);
     }
   });
