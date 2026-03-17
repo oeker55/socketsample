@@ -178,17 +178,17 @@ function updateAgentStatus(detected, connected) {
 
   if (detected && connected) {
     bar.className = 'agent-status-bar agent-ready';
-    icon.textContent = '✅';
+    icon.innerHTML = '<svg class="icon"><use href="icons.svg#ico-check"/></svg>';
     text.textContent = 'Uzaktan kontrol ajanı bağlı ve hazır';
     if (help) help.style.display = 'none';
   } else if (detected) {
     bar.className = 'agent-status-bar agent-detecting';
-    icon.textContent = '🔄';
+    icon.innerHTML = '<svg class="icon"><use href="icons.svg#ico-loader"/></svg>';
     text.textContent = 'Ajan algılandı, bağlanıyor...';
     if (help) help.style.display = 'none';
   } else {
     bar.className = 'agent-status-bar agent-not-detected';
-    icon.textContent = '⚠️';
+    icon.innerHTML = '<svg class="icon"><use href="icons.svg#ico-alert"/></svg>';
     text.textContent = 'Uzaktan kontrol ajanı algılanmadı';
     if (help) help.style.display = 'block';
   }
@@ -295,16 +295,16 @@ async function checkBroadcasterConnectionTypes() {
   if (!card || !val) return;
   card.style.display = 'flex';
   if (hasRelay && hasDirect) {
-    val.textContent = '⚠️ Karışık';
-    val.style.color = '#e2a842';
+    val.innerHTML = '<svg class="icon icon-sm" style="color:#e0a040"><use href="icons.svg#ico-alert"/></svg> Karışık';
+    val.style.color = '#e0a040';
     val.title = 'Bazı izleyiciler TURN (ücretli), bazıları doğrudan bağlı';
   } else if (hasRelay) {
-    val.textContent = '💰 TURN';
-    val.style.color = '#e74c3c';
+    val.innerHTML = '<svg class="icon icon-sm" style="color:#f4516c"><use href="icons.svg#ico-zap"/></svg> TURN';
+    val.style.color = '#f4516c';
     val.title = 'Tüm bağlantılar TURN sunucusu üzerinden (ücretli)';
   } else if (hasDirect) {
-    val.textContent = '✅ Doğrudan';
-    val.style.color = '#2ecc71';
+    val.innerHTML = '<svg class="icon icon-sm" style="color:#36d399"><use href="icons.svg#ico-shield"/></svg> Doğrudan';
+    val.style.color = '#36d399';
     val.title = 'Tüm bağlantılar doğrudan/STUN (ücretsiz)';
   }
 }
@@ -604,8 +604,8 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   const linkInput = document.getElementById('share-link');
   navigator.clipboard.writeText(linkInput.value).then(() => {
     const btn = document.getElementById('copy-btn');
-    btn.textContent = '✅ Kopyalandı!';
-    setTimeout(() => { btn.textContent = '📋 Kopyala'; }, 2500);
+    btn.innerHTML = '<svg class="icon"><use href="icons.svg#ico-check"/></svg> Kopyalandı!';
+    setTimeout(() => { btn.innerHTML = '<svg class="icon"><use href="icons.svg#ico-copy"/></svg> Kopyala'; }, 2500);
   });
 });
 
@@ -679,9 +679,9 @@ socket.on('control-request', async ({ viewerId, viewerName }) => {
   if (monitorList && monitorList.length > 1) {
     const sel = document.getElementById('monitor-select');
     if (sel) {
-      sel.innerHTML = '<option value="-1">🔍 Otomatik algıla</option>';
+      sel.innerHTML = '<option value="-1">Otomatik algıla</option>';
       monitorList.forEach((m, i) => {
-        const label = '🖥️ Monitör ' + (i + 1) + ': ' + m.w + 'x' + m.h + (m.primary ? ' (Ana)' : '');
+        const label = 'Monitör ' + (i + 1) + ': ' + m.w + 'x' + m.h + (m.primary ? ' (Ana)' : '');
         sel.innerHTML += '<option value="' + i + '">' + label + '</option>';
       });
       document.getElementById('monitor-select-row').style.display = 'flex';
