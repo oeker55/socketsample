@@ -8,6 +8,43 @@ const ICE_SERVERS = {
   ],
 };
 
+// TURN sunucu erişilebilirlik testi
+(async function checkTurnServers() {
+  const turnServers = (ICE_SERVERS.iceServers || []).filter(s => {
+    const u = Array.isArray(s.urls) ? s.urls[0] : s.urls;
+    return u && u.startsWith('turn');
+  });
+  if (turnServers.length === 0) {
+    console.warn('⚠️ TURN sunucusu yapılandırılmamış — aynı ağdaki cihazlar bağlanamayabilir');
+    return;
+  }
+  try {
+    const testPC = new RTCPeerConnection({ iceServers: turnServers });
+    testPC.createDataChannel('test');
+    const offer = await testPC.createOffer();
+    await testPC.setLocalDescription(offer);
+    const hasTurnCandidate = await new Promise((resolve) => {
+      let found = false;
+      testPC.onicecandidate = (e) => {
+        if (e.candidate && e.candidate.candidate.includes('relay')) {
+          found = true;
+          resolve(true);
+        }
+        if (!e.candidate && !found) resolve(false);
+      };
+      setTimeout(() => resolve(found), 5000);
+    });
+    testPC.close();
+    if (hasTurnCandidate) {
+      console.log('✅ TURN sunucusu erişilebilir (relay mevcut)');
+    } else {
+      console.warn('⚠️ TURN sunucusuna bağlanılamadı — aynı ağda sorun yaşanabilir');
+    }
+  } catch (e) {
+    console.warn('⚠️ TURN testi başarısız:', e.message);
+  }
+})();
+
 let peerConnection = null;
 let broadcasterId = null;
 let remoteDescSet = false;
@@ -58,6 +95,7 @@ if (!roomId) {
 
       // Stream geldiğinde videoyu göster
       peerConnection.ontrack = (e) => {
+        console.log('📺 Track geldi:', e.track.kind, e.track.readyState);
         const videoEl = document.getElementById('remote-video');
         const stream = e.streams[0] || new MediaStream([e.track]);
         videoEl.srcObject = stream;
@@ -65,26 +103,49 @@ if (!roomId) {
         document.getElementById('waiting-section').style.display = 'none';
         document.getElementById('video-section').style.display = 'block';
 
+        // Önce sessiz olarak başlat (autoplay politikası)
+        videoEl.muted = true;
         videoEl.play()
           .then(() => {
-            document.getElementById('unmute-overlay').style.display = 'none';
+            console.log('📺 Video oynatılıyor (sessiz)');
+            // Sesli oynatmayı dene
+            document.getElementById('unmute-overlay').style.display = 'flex';
           })
-          .catch(() => {
+          .catch((err) => {
+            console.warn('📺 Sessiz oynatma da başarısız:', err);
             document.getElementById('unmute-overlay').style.display = 'flex';
           });
       };
 
       peerConnection.onconnectionstatechange = () => {
         const state = peerConnection.connectionState;
+        console.log('🔗 Bağlantı durumu:', state);
         if (state === 'connected') {
           if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
         } else if (state === 'failed') {
-          setStatus('📡 Bağlantı yeniden kuruluyor...');
+          setStatus('📡 Bağlantı başarısız — yeniden deneniyor...');
           if (!reconnectTimer) {
             reconnectTimer = setTimeout(fullReconnect, 8000);
           }
         } else if (state === 'disconnected') {
           setStatus('📡 Bağlantı zayıf, bekleniyor...');
+        }
+      };
+
+      peerConnection.onicegatheringstatechange = () => {
+        console.log('🧊 ICE toplama:', peerConnection.iceGatheringState);
+      };
+
+      peerConnection.oniceconnectionstatechange = () => {
+        const iceState = peerConnection.iceConnectionState;
+        console.log('🧊 ICE bağlantı:', iceState);
+        if (iceState === 'checking') {
+          setStatus('📡 Bağlantı kuruluyor...');
+        } else if (iceState === 'connected' || iceState === 'completed') {
+          setStatus('✅ Bağlandı');
+        } else if (iceState === 'failed') {
+          console.warn('🧊 ICE başarısız — TURN sunucuları erişilebilir olmayabilir');
+          setStatus('❌ Bağlantı kurulamadı — güvenlik duvarı veya ağ sorunu olabilir');
         }
       };
     }
@@ -192,6 +253,10 @@ document.getElementById('unmute-btn').addEventListener('click', () => {
   videoEl.muted = false;
   videoEl.play().then(() => {
     document.getElementById('unmute-overlay').style.display = 'none';
+  }).catch(() => {
+    // Sessiz bırak en azından video görünsün
+    videoEl.muted = true;
+    videoEl.play();
   });
 });
 

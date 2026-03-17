@@ -224,6 +224,39 @@ const ICE_SERVERS = {
   ],
 };
 
+// TURN erişilebilirlik testi (broadcaster tarafı)
+(async function checkTurnServers() {
+  const turnServers = (ICE_SERVERS.iceServers || []).filter(s => {
+    const u = Array.isArray(s.urls) ? s.urls[0] : s.urls;
+    return u && u.startsWith('turn');
+  });
+  if (turnServers.length === 0) {
+    console.warn('⚠️ TURN sunucusu yok');
+    return;
+  }
+  try {
+    const testPC = new RTCPeerConnection({ iceServers: turnServers });
+    testPC.createDataChannel('test');
+    const offer = await testPC.createOffer();
+    await testPC.setLocalDescription(offer);
+    const hasTurnCandidate = await new Promise((resolve) => {
+      let found = false;
+      testPC.onicecandidate = (e) => {
+        if (e.candidate && e.candidate.candidate.includes('relay')) {
+          found = true;
+          resolve(true);
+        }
+        if (!e.candidate && !found) resolve(false);
+      };
+      setTimeout(() => resolve(found), 5000);
+    });
+    testPC.close();
+    console.log(hasTurnCandidate ? '✅ TURN erişilebilir' : '⚠️ TURN erişilemez — aynı ağda sorun olabilir');
+  } catch (e) {
+    console.warn('⚠️ TURN testi hatası:', e.message);
+  }
+})();
+
 let localStream = null;
 let peerConnections = {}; // viewerId -> RTCPeerConnection
 let pendingCandidatesMap = {}; // viewerId -> [] (answer gelmeden önce ICE tamponu)
