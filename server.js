@@ -92,6 +92,14 @@ app.get('/download/agent.exe', (req, res) => {
   res.download(agentPath, 'agent.exe');
 });
 
+app.get('/download/agent-mac', (req, res) => {
+  const agentPath = path.join(__dirname, 'public', 'agent-mac');
+  if (!require('fs').existsSync(agentPath)) {
+    return res.status(404).send('Agent dosyası bulunamadı');
+  }
+  res.download(agentPath, 'agent-mac');
+});
+
 // ——— Socket.IO Sinyalizasyon ———
 io.on('connection', (socket) => {
   // Odaya katıl
