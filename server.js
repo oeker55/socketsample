@@ -99,7 +99,48 @@ app.get('/download/agent-mac', (req, res) => {
   }
   res.download(agentPath, 'agent-mac');
 });
+// macOS .command launcher — Gatekeeper'\u0131 a\u015far, \u00e7ift t\u0131klama ile \u00e7al\u0131\u015f\u0131r
+app.get('/download/agent-mac.command', (req, res) => {
+  const serverUrl = `${req.protocol}://${req.get('host')}`;
+  const script = `#!/bin/bash
+# ====================================
+# Royal Stream - Uzaktan Kontrol Ajan\u0131
+# ====================================
+cd "$(dirname "$0")"
+BINARY="./agent-mac"
+SERVER="${serverUrl}"
 
+echo ""
+echo "  ========================================="
+echo "  \ud83d\ude80  Royal Stream - macOS Agent Kurulumu"
+echo "  ========================================="
+echo ""
+
+# Binary yoksa indir
+if [ ! -f "$BINARY" ]; then
+  echo "  \u2b07  Agent indiriliyor..."
+  curl -fSL -o "$BINARY" "$SERVER/download/agent-mac"
+  if [ $? -ne 0 ]; then
+    echo "  \u274c \u0130ndirme ba\u015far\u0131s\u0131z! L\u00fctfen internet ba\u011flant\u0131n\u0131z\u0131 kontrol edin."
+    echo "  Kapatmak i\u00e7in bir tu\u015fa bas\u0131n..."
+    read -n1
+    exit 1
+  fi
+  echo "  \u2705 \u0130ndirme tamamland\u0131"
+fi
+
+# Quarantine kald\u0131r ve \u00e7al\u0131\u015ft\u0131rma izni ver
+xattr -cr "$BINARY" 2>/dev/null
+chmod +x "$BINARY"
+
+echo "  \ud83d\ude80 Agent ba\u015flat\u0131l\u0131yor..."
+echo ""
+"$BINARY" "$SERVER"
+`;
+  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Disposition', 'attachment; filename="agent-mac.command"');
+  res.send(script);
+});
 // ——— Socket.IO Sinyalizasyon ———
 io.on('connection', (socket) => {
   // Odaya katıl

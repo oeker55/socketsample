@@ -140,9 +140,9 @@
     var runInstr = document.getElementById('agent-run-instruction');
     if (!btn || !label) return;
     if (/Macintosh|Mac OS X/i.test(ua)) {
-      btn.href = '/download/agent-mac';
-      label.textContent = 'agent-mac İndir';
-      if (runInstr) runInstr.textContent = 'Terminal\'de: chmod +x agent-mac && ./agent-mac';
+      btn.href = '/download/agent-mac.command';
+      label.textContent = 'agent-mac \u0130ndir';
+      if (runInstr) runInstr.innerHTML = '\u0130ndirilen <b>agent-mac.command</b> dosyas\u0131na \u00e7ift t\u0131klay\u0131n';
     } else {
       label.textContent = 'agent.exe İndir (Windows)';
     }
