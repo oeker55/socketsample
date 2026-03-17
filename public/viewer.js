@@ -12,6 +12,7 @@ let peerConnection = null;
 let broadcasterId = null;
 let remoteDescSet = false;
 let pendingCandidates = [];
+let reconnectTimer = null;
 
 const params = new URLSearchParams(window.location.search);
 const roomId = params.get('room');
@@ -38,44 +39,55 @@ if (!roomId) {
     broadcasterId = bId;
     remoteDescSet = false;
     pendingCandidates = [];
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
 
-    peerConnection = new RTCPeerConnection(ICE_SERVERS);
+    // Var olan PC'yi ICE restart için yeniden kullan, yoksa yeni oluştur
+    const needNewPC = !peerConnection || peerConnection.connectionState === 'closed';
 
-    // ICE adayları yayıncıya gönder
-    peerConnection.onicecandidate = (e) => {
-      if (e.candidate) {
-        socket.emit('ice-candidate', { fromId: socket.id, targetId: broadcasterId, candidate: e.candidate });
-      }
-    };
+    if (needNewPC) {
+      if (peerConnection) try { peerConnection.close(); } catch(e) {}
 
-    // Stream geldiğinde videoyu göster
-    peerConnection.ontrack = (e) => {
-      const videoEl = document.getElementById('remote-video');
-      if (videoEl.srcObject) return;
-      const stream = e.streams[0] || new MediaStream([e.track]);
-      videoEl.srcObject = stream;
+      peerConnection = new RTCPeerConnection(ICE_SERVERS);
 
-      document.getElementById('waiting-section').style.display = 'none';
-      document.getElementById('video-section').style.display = 'block';
+      // ICE adayları yayıncıya gönder
+      peerConnection.onicecandidate = (e) => {
+        if (e.candidate) {
+          socket.emit('ice-candidate', { fromId: socket.id, targetId: broadcasterId, candidate: e.candidate });
+        }
+      };
 
-      videoEl.play()
-        .then(() => {
-          document.getElementById('unmute-overlay').style.display = 'none';
-        })
-        .catch(() => {
-          document.getElementById('unmute-overlay').style.display = 'flex';
-        });
-    };
+      // Stream geldiğinde videoyu göster
+      peerConnection.ontrack = (e) => {
+        const videoEl = document.getElementById('remote-video');
+        const stream = e.streams[0] || new MediaStream([e.track]);
+        videoEl.srcObject = stream;
 
-    peerConnection.onconnectionstatechange = () => {
-      const state = peerConnection.connectionState;
-      if (state === 'disconnected' || state === 'failed') {
-        document.getElementById('video-section').style.display = 'none';
-        document.getElementById('waiting-section').style.display = 'block';
-        document.getElementById('loading-spinner').style.display = 'none';
-        setStatus('🔌 Yayın bağlantısı kesildi.');
-      }
-    };
+        document.getElementById('waiting-section').style.display = 'none';
+        document.getElementById('video-section').style.display = 'block';
+
+        videoEl.play()
+          .then(() => {
+            document.getElementById('unmute-overlay').style.display = 'none';
+          })
+          .catch(() => {
+            document.getElementById('unmute-overlay').style.display = 'flex';
+          });
+      };
+
+      peerConnection.onconnectionstatechange = () => {
+        const state = peerConnection.connectionState;
+        if (state === 'connected') {
+          if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
+        } else if (state === 'failed') {
+          setStatus('📡 Bağlantı yeniden kuruluyor...');
+          if (!reconnectTimer) {
+            reconnectTimer = setTimeout(fullReconnect, 8000);
+          }
+        } else if (state === 'disconnected') {
+          setStatus('📡 Bağlantı zayıf, bekleniyor...');
+        }
+      };
+    }
 
     try {
       await peerConnection.setRemoteDescription(new RTCSessionDescription(offer));
@@ -112,6 +124,7 @@ if (!roomId) {
 
   // Yayıncı yayını bitirdi
   socket.on('broadcaster-left', () => {
+    if (reconnectTimer) { clearTimeout(reconnectTimer); reconnectTimer = null; }
     if (peerConnection) {
       peerConnection.close();
       peerConnection = null;
@@ -122,6 +135,20 @@ if (!roomId) {
     setStatus('📴 Yayın sona erdi.');
     deactivateControl();
   });
+
+  // Otomatik yeniden bağlanma
+  function fullReconnect() {
+    reconnectTimer = null;
+    if (peerConnection) {
+      try { peerConnection.close(); } catch(e) {}
+      peerConnection = null;
+    }
+    remoteDescSet = false;
+    pendingCandidates = [];
+    document.getElementById('loading-spinner').style.display = 'block';
+    setStatus('⏳ Yayına yeniden bağlanılıyor...');
+    socket.emit('join-room', roomId, 'viewer');
+  }
 
   // Odaya katıl ve yayıncıya bildir
   socket.on('connect', () => {

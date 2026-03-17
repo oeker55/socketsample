@@ -423,6 +423,35 @@ video {
   color: #2ecc71;
 }
 
+/* ——— MONİTÖR SEÇİCİ ——— */
+.monitor-select-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.monitor-select-row label {
+  font-size: 0.9rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.monitor-select {
+  flex: 1;
+  background: #0a0a1a;
+  border: 1px solid #1f2e50;
+  border-radius: 8px;
+  padding: 8px 12px;
+  color: #e8e8f0;
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.monitor-select:focus {
+  border-color: #e94560;
+}
+
 /* Tam ekran modunda video boyutu */
 :fullscreen #remote-video,
 :-webkit-full-screen #remote-video {

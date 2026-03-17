@@ -64,7 +64,11 @@ async function findMonitorIndex(width, height) {
 }
 
 async function sendMonitorInfo(width, height) {
-  const monitorIndex = await findMonitorIndex(width, height);
+  // Kullanıcı monitör seçtiyse onu kullan
+  const monSel = document.getElementById('monitor-select');
+  const selIdx = monSel ? parseInt(monSel.value) : -1;
+  const monitorIndex = selIdx >= 0 ? selIdx : await findMonitorIndex(width, height);
+  console.log('📺 Monitör bilgisi:', { width, height, monitorIndex, manual: selIdx >= 0 });
   socket.emit('set-active-monitor', { width, height, monitorIndex });
   // Ajana da doğrudan bildir
   if (agentAvailable) {
@@ -78,32 +82,43 @@ async function sendMonitorInfo(width, height) {
   }
 }
 
+let showAgentUI = false;
+
 function updateAgentStatus(detected, connected) {
   const el = document.getElementById('agent-status');
   if (!el) return;
-  // Ajan durumu sadece kontrol aktif veya talep edildiğinde gösterilir
-  if (!detected || !controlViewerId) {
+  if (!detected || !showAgentUI) {
     el.style.display = 'none';
   } else {
     el.style.display = 'block';
-    el.textContent = connected ? '🤖 Uzaktan kontrol ajanı bağlı' : '🤖 Ajan algılandı, bağlanıyor...';
-    el.className = 'agent-status ' + (connected ? 'agent-connected' : 'agent-detected');
+    if (connected) {
+      el.textContent = '🤖 Uzaktan kontrol ajanı bağlı';
+      el.className = 'agent-status agent-connected';
+    } else {
+      el.textContent = '🤖 Ajan algılandı, bağlanıyor...';
+      el.className = 'agent-status agent-detected';
+    }
   }
 }
 
-// Ajan kontrolü sessizce yapılır, UI göstermez (sadece iç durum güncellenir)
+// Ajan kontrolü sessizce yapılır
 async function silentAgentCheck() {
   try {
     const res = await fetch(AGENT_LOCAL_URL + '/status', { signal: AbortSignal.timeout(1000) });
     if (res.ok) {
       agentAvailable = true;
+      if (showAgentUI) {
+        const data = await res.json();
+        updateAgentStatus(true, data.connected);
+      }
       return;
     }
   } catch (e) { /* ajan çalışmıyor */ }
   agentAvailable = false;
+  if (showAgentUI) updateAgentStatus(false, false);
 }
 
-// Periyodik kontrol — sessiz (UI göstermez)
+// Periyodik kontrol
 setInterval(silentAgentCheck, 5000);
 silentAgentCheck();
 
@@ -210,6 +225,15 @@ setupSocketEvents();
 
 // ——— Yeni izleyici için peer connection oluştur ———
 async function handleNewViewer(viewerId) {
+  // Var olan bağlantıyı temizle (yeniden bağlanma durumu)
+  if (peerConnections[viewerId]) {
+    peerConnections[viewerId].close();
+    delete peerConnections[viewerId];
+    delete pendingCandidatesMap[viewerId];
+    delete remoteDescSetMap[viewerId];
+    viewerCount = Math.max(0, viewerCount - 1);
+  }
+
   const pc = new RTCPeerConnection(ICE_SERVERS);
   peerConnections[viewerId] = pc;
   pendingCandidatesMap[viewerId] = [];
@@ -225,6 +249,20 @@ async function handleNewViewer(viewerId) {
 
   pc.onconnectionstatechange = () => {
     console.log('Bağlantı durumu (' + viewerId + '):', pc.connectionState);
+  };
+
+  // ICE bağlantısı başarısız olursa yeniden dene
+  pc.oniceconnectionstatechange = async () => {
+    if (pc.iceConnectionState === 'failed') {
+      try {
+        console.log('ICE restart başlatılıyor:', viewerId);
+        const newOffer = await pc.createOffer({ iceRestart: true });
+        await pc.setLocalDescription(newOffer);
+        socket.emit('offer', { broadcasterId: socket.id, viewerId, offer: newOffer });
+      } catch (err) {
+        console.error('ICE restart hatası:', err);
+      }
+    }
   };
 
   try {
@@ -274,7 +312,11 @@ async function switchSource(newStream) {
     if (audioSender && newAudioTrack) await audioSender.replaceTrack(newAudioTrack);
   }
 
-  if (localStream) localStream.getTracks().forEach((t) => t.stop());
+  // Eski track'lerin onended handler'ını temizle (kaynak değiştirirken yayını kesmesin)
+  if (localStream) {
+    localStream.getVideoTracks().forEach(t => { t.onended = null; });
+    localStream.getTracks().forEach((t) => t.stop());
+  }
   localStream = newStream;
   document.getElementById('local-video').srcObject = newStream;
 
@@ -388,12 +430,27 @@ let controlViewerId = null;
 let pendingRequestViewerId = null;
 
 // İzleyiciden kontrol isteği geldi
-socket.on('control-request', ({ viewerId, viewerName }) => {
+socket.on('control-request', async ({ viewerId, viewerName }) => {
   if (controlViewerId) return; // zaten biri kontrol ediyor
   pendingRequestViewerId = viewerId;
   document.getElementById('control-requester-name').textContent =
     (viewerName || 'Bir izleyici') + ' kontrol istiyor';
   document.getElementById('control-notification').style.display = 'block';
+
+  // Ajan algılıysa monitör seçici göster
+  showAgentUI = true;
+  const agentData = await checkLocalAgent();
+  if (agentAvailable && agentData && agentData.monitors && agentData.monitors.length > 1) {
+    const sel = document.getElementById('monitor-select');
+    if (sel) {
+      sel.innerHTML = '<option value="-1">🔍 Otomatik algıla</option>';
+      agentData.monitors.forEach((m, i) => {
+        const label = '🖥️ Monitör ' + (i + 1) + ': ' + m.w + 'x' + m.h + (m.primary ? ' (Ana)' : '');
+        sel.innerHTML += '<option value="' + i + '">' + label + '</option>';
+      });
+      document.getElementById('monitor-select-row').style.display = 'flex';
+    }
+  }
 });
 
 // Kabul
@@ -423,6 +480,7 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
   }
 
   // Yerel ajanı kontrol isteği kabul edildiğinde bağla
+  showAgentUI = true;
   await checkLocalAgent();
   if (agentAvailable && currentRoomId) {
     await connectAgentToRoom(currentRoomId);
@@ -440,6 +498,7 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
 
   pendingRequestViewerId = null;
   document.getElementById('control-notification').style.display = 'none';
+  document.getElementById('monitor-select-row').style.display = 'none';
   document.getElementById('control-active-bar').style.display = 'flex';
 });
 
@@ -448,18 +507,25 @@ document.getElementById('control-deny-btn').addEventListener('click', () => {
   if (!pendingRequestViewerId) return;
   socket.emit('control-response', { viewerId: pendingRequestViewerId, granted: false });
   pendingRequestViewerId = null;
+  showAgentUI = false;
   document.getElementById('control-notification').style.display = 'none';
+  document.getElementById('monitor-select-row').style.display = 'none';
+  updateAgentStatus(false, false);
 });
 
 // Kontrolü geri al
 document.getElementById('control-revoke-btn').addEventListener('click', () => {
   socket.emit('control-revoke');
   controlViewerId = null;
+  showAgentUI = false;
   document.getElementById('control-active-bar').style.display = 'none';
+  updateAgentStatus(false, false);
 });
 
 // İzleyici kontrolü bıraktı
 socket.on('control-released', () => {
   controlViewerId = null;
+  showAgentUI = false;
   document.getElementById('control-active-bar').style.display = 'none';
+  updateAgentStatus(false, false);
 });
