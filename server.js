@@ -67,6 +67,10 @@ io.on('connection', (socket) => {
       // Yayıncıya yeni izleyici bildirimi
       socket.to(roomId).emit('viewer-joined', { viewerId: socket.id });
     }
+
+    if (role === 'agent') {
+      console.log(`  🤖 Yerel ajan odaya katıldı: ${roomId}`);
+    }
   });
 
   // Offer (yayıncı → izleyici)
@@ -122,8 +126,24 @@ io.on('connection', (socket) => {
   // Yayıncı paylaşılan monitörü bildiriyor
   socket.on('set-active-monitor', ({ width, height }) => {
     if (socket.data.role !== 'broadcaster') return;
-    if (typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0) {
+    if (typeof width !== 'number' || typeof height !== 'number' || width <= 0 || height <= 0) return;
+
+    // Yerelde çalışıyorsa doğrudan ayarla
+    if (remoteInput.enabled) {
       remoteInput.setActiveMonitorByResolution(width, height);
+    }
+    // Ajana da ilet
+    const roomId = socket.data.roomId;
+    if (roomId) {
+      const room = io.sockets.adapter.rooms.get(roomId);
+      if (room) {
+        for (const sid of room) {
+          const s = io.sockets.sockets.get(sid);
+          if (s && s.data.role === 'agent') {
+            s.emit('set-active-monitor', { width, height });
+          }
+        }
+      }
     }
   });
 
@@ -152,36 +172,47 @@ io.on('connection', (socket) => {
   // Uzak giriş olayları (fare/klavye)
   socket.on('remote-input', (data) => {
     const roomId = socket.data.roomId;
-    if (!roomId) { console.log('  ⚠ remote-input: roomId yok'); return; }
+    if (!roomId) return;
     const session = controlSessions[roomId];
-    if (!session || session.viewerId !== socket.id) {
-      console.log('  ⚠ remote-input: yetki yok', { session: !!session, viewerId: session?.viewerId, socketId: socket.id });
-      return;
-    }
-    if (!remoteInput.enabled) {
-      console.log('  ⚠ remote-input geldi ama remoteInput hazır değil (enabled=false)');
-      return;
-    }
-    if (data.type === 'mousedown' || data.type === 'keydown') {
-      console.log('  🎮 remote-input:', data.type, data.nx?.toFixed(2), data.ny?.toFixed(2), data.button || data.keyCode);
-    }
+    if (!session || session.viewerId !== socket.id) return;
 
-    const t = data.type;
-    if (t === 'mousemove') {
-      remoteInput.moveMouse(data.nx, data.ny);
-    } else if (t === 'mousedown') {
-      remoteInput.moveMouse(data.nx, data.ny);
-      remoteInput.mouseDown(data.button);
-    } else if (t === 'mouseup') {
-      remoteInput.moveMouse(data.nx, data.ny);
-      remoteInput.mouseUp(data.button);
-    } else if (t === 'scroll') {
-      remoteInput.scroll(data.deltaY);
-    } else if (t === 'keydown') {
-      remoteInput.keyDown(data.keyCode);
-    } else if (t === 'keyup') {
-      remoteInput.keyUp(data.keyCode);
+    // Sunucu yerelde çalışıyorsa doğrudan uygula
+    if (remoteInput.enabled) {
+      const t = data.type;
+      if (t === 'mousemove') {
+        remoteInput.moveMouse(data.nx, data.ny);
+      } else if (t === 'mousedown') {
+        remoteInput.moveMouse(data.nx, data.ny);
+        remoteInput.mouseDown(data.button);
+      } else if (t === 'mouseup') {
+        remoteInput.moveMouse(data.nx, data.ny);
+        remoteInput.mouseUp(data.button);
+      } else if (t === 'scroll') {
+        remoteInput.scroll(data.deltaY);
+      } else if (t === 'keydown') {
+        remoteInput.keyDown(data.keyCode);
+      } else if (t === 'keyup') {
+        remoteInput.keyUp(data.keyCode);
+      }
+    } else {
+      // Uzak sunucu: odadaki yerle ajan'a ilet
+      const room = io.sockets.adapter.rooms.get(roomId);
+      if (room) {
+        for (const sid of room) {
+          const s = io.sockets.sockets.get(sid);
+          if (s && s.data.role === 'agent') {
+            s.emit('remote-input-relay', data);
+            return;
+          }
+        }
+      }
     }
+  });
+
+  // Ajan monitör bilgisi güncellemesi
+  socket.on('agent-monitor-info', ({ monitors }) => {
+    if (socket.data.role !== 'agent') return;
+    console.log(`  🤖 Ajan monitör bilgisi:`, monitors);
   });
 
   // Yayıncı ayrıldı
