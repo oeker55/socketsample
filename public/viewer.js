@@ -94,27 +94,37 @@ if (!roomId) {
       };
 
       // Stream geldiğinde videoyu göster
+      let trackDebounce = null;
       peerConnection.ontrack = (e) => {
         console.log('📺 Track geldi:', e.track.kind, e.track.readyState);
         const videoEl = document.getElementById('remote-video');
-        const stream = e.streams[0] || new MediaStream([e.track]);
-        videoEl.srcObject = stream;
+
+        // Stream'i sadece bir kez ayarla
+        if (!videoEl.srcObject || videoEl.srcObject.id !== (e.streams[0] && e.streams[0].id)) {
+          videoEl.srcObject = e.streams[0] || new MediaStream([e.track]);
+        } else if (e.streams[0]) {
+          // Aynı stream, track zaten ekleniyor
+        } else {
+          videoEl.srcObject.addTrack(e.track);
+        }
 
         document.getElementById('waiting-section').style.display = 'none';
         document.getElementById('video-section').style.display = 'block';
 
-        // Önce sessiz olarak başlat (autoplay politikası)
-        videoEl.muted = true;
-        videoEl.play()
-          .then(() => {
-            console.log('📺 Video oynatılıyor (sessiz)');
-            // Sesli oynatmayı dene
-            document.getElementById('unmute-overlay').style.display = 'flex';
-          })
-          .catch((err) => {
-            console.warn('📺 Sessiz oynatma da başarısız:', err);
-            document.getElementById('unmute-overlay').style.display = 'flex';
-          });
+        // play() çağrısını debounce et — tüm track’ler gelsin
+        if (trackDebounce) clearTimeout(trackDebounce);
+        trackDebounce = setTimeout(() => {
+          videoEl.muted = true;
+          videoEl.play()
+            .then(() => {
+              console.log('📺 Video oynatılıyor (sessiz)');
+              document.getElementById('unmute-overlay').style.display = 'flex';
+            })
+            .catch((err) => {
+              console.warn('📺 Sessiz oynatma başarısız:', err);
+              document.getElementById('unmute-overlay').style.display = 'flex';
+            });
+        }, 200);
       };
 
       peerConnection.onconnectionstatechange = () => {

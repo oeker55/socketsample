@@ -24,20 +24,32 @@ function buildIceServers() {
       username: process.env.TURN_USERNAME || '',
       credential: process.env.TURN_CREDENTIAL || '',
     });
-  } else {
-    // Metered Open Relay – ücretsiz genel TURN sunucusu
-    iceServers.push(
-      { urls: 'turn:openrelay.metered.ca:80', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' },
-      { urls: 'turns:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
-    );
   }
 
   return iceServers;
 }
 
-const iceServers = buildIceServers();
+// Metered.ca API ile dinamik TURN credential alma
+async function getMeteredTurnServers() {
+  const apiKey = process.env.METERED_API_KEY || '556893d3fedd6e959c64507cc5475de0041e';
+  const domain = process.env.METERED_DOMAIN || 'oeker55.metered.live';
+  if (!apiKey) return null;
+  try {
+    const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`);
+    if (!res.ok) {
+      console.warn('  ⚠ Metered.ca yanıt:', res.status, res.statusText);
+      return null;
+    }
+    const servers = await res.json();
+    console.log('  ✅ Metered.ca TURN sunucuları alındı:', servers.length, 'sunucu');
+    return servers;
+  } catch (e) {
+    console.warn('  ⚠ Metered.ca TURN alınamadı:', e.message);
+    return null;
+  }
+}
+
+let iceServers = buildIceServers();
 
 // ——— Uzaktan Kontrol Modülü ———
 const RemoteInput = require('./remote-input');
@@ -48,9 +60,23 @@ const controlSessions = {}; // roomId -> { viewerId }
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-app.get('/config.js', (req, res) => {
+app.get('/config.js', async (req, res) => {
   res.type('application/javascript');
-  res.send(`window.APP_CONFIG = ${JSON.stringify({ iceServers })};`);
+  // Metered.ca TURN sunucuları varsa ekle
+  let servers = [...iceServers];
+  const meteredServers = await getMeteredTurnServers();
+  if (meteredServers && meteredServers.length > 0) {
+    servers = servers.concat(meteredServers);
+  }
+  // TURN yoksa uyar
+  const hasTurn = servers.some(s => {
+    const u = Array.isArray(s.urls) ? s.urls[0] : (s.urls || '');
+    return u.startsWith('turn');
+  });
+  if (!hasTurn) {
+    console.warn('  ⚠ TURN sunucusu yapılandırılmamış! METERED_API_KEY veya TURN_URLS env değişkeni gerekli.');
+  }
+  res.send(`window.APP_CONFIG = ${JSON.stringify({ iceServers: servers })};`);
 });
 
 app.get('/api/monitors', (req, res) => {
