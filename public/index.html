@@ -7,23 +7,26 @@
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <!-- SVG Icon Sprite -->
+  <div style="display:none" id="svg-sprite-container"></div>
+
   <div class="container">
     <div class="header">
-      <h1>🎥 Canlı Yayın</h1>
+      <h1><svg class="icon"><use href="icons.svg#ico-camera"/></svg> Canlı Yayın</h1>
       <p class="subtitle">Yayın başlatın ve linki arkadaşlarınızla paylaşın</p>
     </div>
 
     <!-- Başlangıç Ekranı -->
     <div id="setup-section" class="card">
-      <div class="setup-icon">📡</div>
+      <div class="setup-icon"><svg class="icon"><use href="icons.svg#ico-broadcast"/></svg></div>
       <h2>Yayına Başla</h2>
       <p>Yayınlamak istediğiniz kaynağı seçin.</p>
       <div class="source-btns">
         <button id="start-camera-btn" class="btn btn-primary btn-source">
-          🎥 Kamera ile Yayınla
+          <svg class="icon"><use href="icons.svg#ico-camera"/></svg> Kamera ile Yayınla
         </button>
         <button id="start-screen-btn" class="btn btn-secondary btn-source">
-          🖥️ Ekranımı Paylaş
+          <svg class="icon"><use href="icons.svg#ico-screen"/></svg> Ekranımı Paylaş
         </button>
       </div>
     </div>
@@ -32,60 +35,64 @@
     <div id="stream-section" style="display:none;">
       <div class="video-wrapper">
         <video id="local-video" autoplay muted playsinline></video>
-        <div class="live-badge">🔴 CANLI</div>
+        <div class="live-badge"><svg class="icon"><use href="icons.svg#ico-live"/></svg> CANLI</div>
       </div>
 
       <div class="card share-box">
-        <h3>🔗 Paylaşım Linki</h3>
+        <h3><svg class="icon"><use href="icons.svg#ico-link"/></svg> Paylaşım Linki</h3>
         <p>Bu linki arkadaşlarınıza gönderin — bağlantısı olan herkes yayını izleyebilir.</p>
         <div class="link-row">
           <input type="text" id="share-link" readonly placeholder="Link oluşturuluyor..." />
-          <button id="copy-btn" class="btn btn-secondary">📋 Kopyala</button>
+          <button id="copy-btn" class="btn btn-secondary"><svg class="icon"><use href="icons.svg#ico-copy"/></svg> Kopyala</button>
         </div>
       </div>
 
       <div class="stats-row">
         <div class="stat-card">
-          <span class="stat-label">👥 İzleyici</span>
+          <span class="stat-label"><svg class="icon"><use href="icons.svg#ico-users"/></svg> İzleyici</span>
           <span class="stat-value" id="viewer-count">0</span>
         </div>
         <div class="stat-card">
-          <span class="stat-label">📶 Durum</span>
-          <span class="stat-value" id="stream-status" style="color:#2ecc71;">Canlı</span>
+          <span class="stat-label"><svg class="icon"><use href="icons.svg#ico-signal"/></svg> Durum</span>
+          <span class="stat-value" id="stream-status" style="color:#36d399;">Canlı</span>
+        </div>
+        <div class="stat-card" id="connection-type-card" style="display:none;">
+          <span class="stat-label"><svg class="icon"><use href="icons.svg#ico-wifi"/></svg> Bağlantı</span>
+          <span class="stat-value" id="connection-type-value" style="font-size:0.9rem;">-</span>
         </div>
       </div>
 
       <!-- Uzaktan Kontrol Bildirimi -->
       <div id="control-notification" class="card control-card" style="display:none;">
         <div class="control-request-info">
-          <span>🎮</span>
+          <svg class="icon"><use href="icons.svg#ico-gamepad"/></svg>
           <span id="control-requester-name">Bir izleyici kontrol istiyor</span>
         </div>
-        <p class="control-hint">⚠️ Kabul ettiğinizde tüm ekranınız paylaşılacak. İzleyici tarayıcı kontrolleri dahil her şeyi görebilir ve kontrol edebilir.</p>
+        <p class="control-hint"><svg class="icon"><use href="icons.svg#ico-alert"/></svg> Kabul ettiğinizde tüm ekranınız paylaşılacak. İzleyici tarayıcı kontrolleri dahil her şeyi görebilir ve kontrol edebilir.</p>
         <div id="monitor-select-row" class="monitor-select-row" style="display:none;">
-          <label>🖥️ Kontrol edilecek monitör:</label>
+          <label><svg class="icon"><use href="icons.svg#ico-screen"/></svg> Kontrol edilecek monitör:</label>
           <select id="monitor-select" class="monitor-select">
-            <option value="-1">🔍 Otomatik algıla</option>
+            <option value="-1">Otomatik algıla</option>
           </select>
         </div>
         <div class="control-btns">
-          <button id="control-accept-btn" class="btn btn-primary">✅ Kabul Et</button>
-          <button id="control-deny-btn" class="btn btn-danger">❌ Reddet</button>
+          <button id="control-accept-btn" class="btn btn-primary"><svg class="icon"><use href="icons.svg#ico-check"/></svg> Kabul Et</button>
+          <button id="control-deny-btn" class="btn btn-danger"><svg class="icon"><use href="icons.svg#ico-x"/></svg> Reddet</button>
         </div>
       </div>
 
       <!-- Yerel Ajan Durumu -->
       <div id="agent-panel" class="agent-panel">
         <div id="agent-status-bar" class="agent-status-bar agent-not-detected">
-          <span id="agent-status-icon">⚠️</span>
+          <span id="agent-status-icon"><svg class="icon"><use href="icons.svg#ico-alert"/></svg></span>
           <span id="agent-status-text">Uzaktan kontrol ajanı algılanmadı</span>
         </div>
         <div id="agent-help" class="agent-help">
           <p>Uzaktan kontrol için bilgisayarınızda ajanın çalışması gerekir:</p>
           <div class="agent-steps">
-            <div class="agent-step">1️⃣ <a href="/download/agent.exe" id="agent-download-btn" class="btn btn-primary btn-small">⬇️ agent.exe İndir</a></div>
-            <div class="agent-step">2️⃣ İndirilen dosyayı çalıştırın</div>
-            <div class="agent-step">3️⃣ Ajan otomatik olarak bağlanacak</div>
+            <div class="agent-step"><span class="step-num">1</span> <a href="/download/agent.exe" id="agent-download-btn" class="btn btn-primary btn-small"><svg class="icon"><use href="icons.svg#ico-download"/></svg> <span id="agent-download-label">agent İndir</span></a></div>
+            <div class="agent-step"><span class="step-num">2</span> <span id="agent-run-instruction">İndirilen dosyayı çalıştırın</span></div>
+            <div class="agent-step"><span class="step-num">3</span> Ajan otomatik olarak bağlanacak</div>
           </div>
         </div>
       </div>
@@ -93,22 +100,22 @@
 
       <!-- Kontrol Aktif Bilgi Çubuğu -->
       <div id="control-active-bar" class="control-active-bar" style="display:none;">
-        <span>🎮 Uzaktan kontrol aktif</span>
-        <button id="control-revoke-btn" class="btn btn-danger">🚫 Kontrolü Geri Al</button>
+        <span><svg class="icon"><use href="icons.svg#ico-gamepad"/></svg> Uzaktan kontrol aktif</span>
+        <button id="control-revoke-btn" class="btn btn-danger"><svg class="icon"><use href="icons.svg#ico-ban"/></svg> Kontrolü Geri Al</button>
       </div>
 
       <!-- Kaynak değiştir -->
       <div class="source-switch-row">
-        <button id="switch-camera-btn" class="btn btn-secondary">🎥 Kameraya Geç</button>
-        <button id="switch-screen-btn" class="btn btn-secondary">🖥️ Ekrana Geç</button>
+        <button id="switch-camera-btn" class="btn btn-secondary"><svg class="icon"><use href="icons.svg#ico-camera"/></svg> Kameraya Geç</button>
+        <button id="switch-screen-btn" class="btn btn-secondary"><svg class="icon"><use href="icons.svg#ico-screen"/></svg> Ekrana Geç</button>
       </div>
 
-      <button id="stop-btn" class="btn btn-danger btn-large">⏹ Yayını Durdur</button>
+      <button id="stop-btn" class="btn btn-danger btn-large"><svg class="icon"><use href="icons.svg#ico-stop"/></svg> Yayını Durdur</button>
 
       <!-- Chat -->
       <div class="chat-box card">
         <div class="chat-header">
-          <span>💬 Canlı Sohbet</span>
+          <span><svg class="icon"><use href="icons.svg#ico-chat"/></svg> Canlı Sohbet</span>
           <span class="chat-badge" id="chat-badge" style="display:none"></span>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
@@ -125,6 +132,23 @@
   <script src="/config.js"></script>
   <script src="/socket.io/socket.io.js"></script>
   <script src="chat.js"></script>
+  <script>
+  // Platform algılama — uygun ajan indirme bağlantısı
+  (function() {
+    var ua = navigator.userAgent;
+    var btn = document.getElementById('agent-download-btn');
+    var label = document.getElementById('agent-download-label');
+    var runInstr = document.getElementById('agent-run-instruction');
+    if (!btn || !label) return;
+    if (/Macintosh|Mac OS X/i.test(ua)) {
+      btn.href = '/download/agent-mac.command';
+      label.textContent = 'agent-mac \u0130ndir';
+      if (runInstr) runInstr.innerHTML = '\u0130ndirilen <b>agent-mac.command</b> dosyas\u0131na \u00e7ift t\u0131klay\u0131n';
+    } else {
+      label.textContent = 'agent.exe İndir (Windows)';
+    }
+  })();
+  </script>
   <script src="broadcaster.js"></script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 // remote-input.js — Windows + macOS fare/klavye simülasyonu
 // Windows: PowerShell + user32.dll
-// macOS: Python3 + CoreGraphics
+// macOS: osascript (JXA) + CoreGraphics — Python gerekmez
 
 const { spawn } = require('child_process');
 const os = require('os');
@@ -17,79 +17,80 @@ const MOUSEEVENTF_MIDDLEUP = 0x0040;
 const MOUSEEVENTF_WHEEL = 0x0800;
 const KEYEVENTF_KEYUP = 0x0002;
 
-// macOS yardımcı Python betiği
-const MAC_HELPER_SCRIPT = `import sys,json,ctypes,ctypes.util
-try:
-    CG=ctypes.cdll.LoadLibrary('/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics')
-    CF=ctypes.cdll.LoadLibrary('/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation')
-except:
-    print("ERROR:CoreGraphics yuklenemedi",flush=True)
-    sys.exit(1)
-class P(ctypes.Structure):
-    _fields_=[('x',ctypes.c_double),('y',ctypes.c_double)]
-class S(ctypes.Structure):
-    _fields_=[('width',ctypes.c_double),('height',ctypes.c_double)]
-class R(ctypes.Structure):
-    _fields_=[('origin',P),('size',S)]
-CG.CGMainDisplayID.restype=ctypes.c_uint32
-CG.CGDisplayBounds.restype=R
-CG.CGDisplayBounds.argtypes=[ctypes.c_uint32]
-CG.CGGetActiveDisplayList.argtypes=[ctypes.c_uint32,ctypes.POINTER(ctypes.c_uint32),ctypes.POINTER(ctypes.c_uint32)]
-CG.CGWarpMouseCursorPosition.argtypes=[P]
-CG.CGEventCreateMouseEvent.restype=ctypes.c_void_p
-CG.CGEventCreateMouseEvent.argtypes=[ctypes.c_void_p,ctypes.c_uint32,P,ctypes.c_uint32]
-CG.CGEventCreateKeyboardEvent.restype=ctypes.c_void_p
-CG.CGEventCreateKeyboardEvent.argtypes=[ctypes.c_void_p,ctypes.c_uint16,ctypes.c_bool]
-CG.CGEventCreateScrollWheelEvent.restype=ctypes.c_void_p
-CG.CGEventCreateScrollWheelEvent.argtypes=[ctypes.c_void_p,ctypes.c_uint32,ctypes.c_uint32,ctypes.c_int32]
-CG.CGEventPost.argtypes=[ctypes.c_uint32,ctypes.c_void_p]
-CF.CFRelease.argtypes=[ctypes.c_void_p]
-K={8:51,9:48,13:36,16:56,17:59,18:58,20:57,27:53,32:49,33:116,34:121,35:119,36:115,37:123,38:126,39:124,40:125,46:117,48:29,49:18,50:19,51:20,52:21,53:23,54:22,55:26,56:28,57:25,65:0,66:11,67:8,68:2,69:14,70:3,71:5,72:4,73:34,74:38,75:40,76:37,77:46,78:45,79:31,80:35,81:12,82:15,83:1,84:17,85:32,86:9,87:13,88:7,89:16,90:6,91:55,93:55,112:122,113:120,114:99,115:118,116:96,117:97,118:98,119:100,120:101,121:109,122:103,123:111,186:41,187:24,188:43,189:27,190:47,191:44,192:50,219:33,220:42,221:30,222:39}
-def post(ev):
-    if ev:
-        CG.CGEventPost(0,ev)
-        CF.CFRelease(ev)
-n=16
-c=ctypes.c_uint32()
-ids=(ctypes.c_uint32*n)()
-CG.CGGetActiveDisplayList(n,ids,ctypes.byref(c))
-mid=CG.CGMainDisplayID()
-for i in range(c.value):
-    b=CG.CGDisplayBounds(ids[i])
-    p=1 if ids[i]==mid else 0
-    print(f"MON:{int(b.origin.x)},{int(b.origin.y)},{int(b.size.width)},{int(b.size.height)},{p}",flush=True)
-mb=CG.CGDisplayBounds(mid)
-print(f"READY:{int(mb.size.width)},{int(mb.size.height)}",flush=True)
-for line in sys.stdin:
-    line=line.strip()
-    if not line:continue
-    try:
-        d=json.loads(line)
-        t=d.get('t')
-        if t=='mm':
-            CG.CGWarpMouseCursorPosition(P(d['x'],d['y']))
-        elif t=='md':
-            x,y,b=d['x'],d['y'],d.get('b','left')
-            CG.CGWarpMouseCursorPosition(P(x,y))
-            if b=='right':post(CG.CGEventCreateMouseEvent(None,3,P(x,y),1))
-            elif b=='middle':post(CG.CGEventCreateMouseEvent(None,25,P(x,y),2))
-            else:post(CG.CGEventCreateMouseEvent(None,1,P(x,y),0))
-        elif t=='mu':
-            x,y,b=d['x'],d['y'],d.get('b','left')
-            if b=='right':post(CG.CGEventCreateMouseEvent(None,4,P(x,y),1))
-            elif b=='middle':post(CG.CGEventCreateMouseEvent(None,26,P(x,y),2))
-            else:post(CG.CGEventCreateMouseEvent(None,2,P(x,y),0))
-        elif t=='sc':
-            a=-1 if d.get('dy',0)>0 else 1
-            post(CG.CGEventCreateScrollWheelEvent(None,1,1,a))
-        elif t=='kd':
-            mk=K.get(d.get('vk',0),-1)
-            if mk>=0:post(CG.CGEventCreateKeyboardEvent(None,mk,True))
-        elif t=='ku':
-            mk=K.get(d.get('vk',0),-1)
-            if mk>=0:post(CG.CGEventCreateKeyboardEvent(None,mk,False))
-    except:pass
-`;
+// macOS yardımcı JXA betiği — osascript ile çalışır, Python gerekmez
+const MAC_HELPER_JXA = `ObjC.import('Cocoa');
+ObjC.import('CoreGraphics');
+ObjC.import('CoreFoundation');
+ObjC.bindFunction('CGWarpMouseCursorPosition',['void',['{CGPoint=dd}']]);
+ObjC.bindFunction('CGEventCreateMouseEvent',['void *',['void *','unsigned int','{CGPoint=dd}','unsigned int']]);
+ObjC.bindFunction('CGEventCreateKeyboardEvent',['void *',['void *','unsigned short','bool']]);
+ObjC.bindFunction('CGEventCreateScrollWheelEvent',['void *',['void *','unsigned int','unsigned int','int']]);
+ObjC.bindFunction('CGEventPost',['void',['unsigned int','void *']]);
+ObjC.bindFunction('CFRelease',['void',['void *']]);
+var K={8:51,9:48,13:36,16:56,17:59,18:58,20:57,27:53,32:49,33:116,34:121,35:119,36:115,37:123,38:126,39:124,40:125,46:117,48:29,49:18,50:19,51:20,52:21,53:23,54:22,55:26,56:28,57:25,65:0,66:11,67:8,68:2,69:14,70:3,71:5,72:4,73:34,74:38,75:40,76:37,77:46,78:45,79:31,80:35,81:12,82:15,83:1,84:17,85:32,86:9,87:13,88:7,89:16,90:6,91:55,93:55,112:122,113:120,114:99,115:118,116:96,117:97,118:98,119:100,120:101,121:109,122:103,123:111,186:41,187:24,188:43,189:27,190:47,191:44,192:50,219:33,220:42,221:30,222:39};
+var so=$.NSFileHandle.fileHandleWithStandardOutput;
+var si=$.NSFileHandle.fileHandleWithStandardInput;
+function w(s){so.writeData($.NSString.alloc.initWithUTF8String(s+'\\n').dataUsingEncoding($.NSUTF8StringEncoding));}
+function post(ev){if(ev){$.CGEventPost(0,ev);$.CFRelease(ev);}}
+function run(){
+var screens=$.NSScreen.screens;
+var ms=$.NSScreen.mainScreen;
+var mf=ms.frame;
+var pH=mf.size.height;
+var mW=Math.round(mf.size.width);
+var mH=Math.round(pH);
+for(var i=0;i<screens.count;i++){
+var s=screens.objectAtIndex(i);
+var f=s.frame;
+var gx=Math.round(f.origin.x);
+var gy=Math.round(pH-f.origin.y-f.size.height);
+var sw=Math.round(f.size.width);
+var sh=Math.round(f.size.height);
+var p=s.isEqual(ms)?1:0;
+w('MON:'+gx+','+gy+','+sw+','+sh+','+p);
+}
+w('READY:'+mW+','+mH);
+var buf='';
+while(true){
+var data=si.availableData;
+if(data.length===0)break;
+var chunk=$.NSString.alloc.initWithDataEncoding(data,$.NSUTF8StringEncoding).js;
+buf+=chunk;
+var lines=buf.split('\\n');
+buf=lines.pop();
+for(var li=0;li<lines.length;li++){
+var line=lines[li].trim();
+if(!line)continue;
+try{
+var d=JSON.parse(line);
+var t=d.t;
+if(t==='mm'){
+$.CGWarpMouseCursorPosition({x:d.x,y:d.y});
+}else if(t==='md'){
+var mx=d.x,my=d.y,b=d.b||'left';
+$.CGWarpMouseCursorPosition({x:mx,y:my});
+if(b==='right')post($.CGEventCreateMouseEvent(null,3,{x:mx,y:my},1));
+else if(b==='middle')post($.CGEventCreateMouseEvent(null,25,{x:mx,y:my},2));
+else post($.CGEventCreateMouseEvent(null,1,{x:mx,y:my},0));
+}else if(t==='mu'){
+var mx=d.x,my=d.y,b=d.b||'left';
+if(b==='right')post($.CGEventCreateMouseEvent(null,4,{x:mx,y:my},1));
+else if(b==='middle')post($.CGEventCreateMouseEvent(null,26,{x:mx,y:my},2));
+else post($.CGEventCreateMouseEvent(null,2,{x:mx,y:my},0));
+}else if(t==='sc'){
+var a=(d.dy||0)>0?-1:1;
+post($.CGEventCreateScrollWheelEvent(null,1,1,a));
+}else if(t==='kd'){
+var mk=K[d.vk||0];
+if(mk!==undefined)post($.CGEventCreateKeyboardEvent(null,mk,true));
+}else if(t==='ku'){
+var mk=K[d.vk||0];
+if(mk!==undefined)post($.CGEventCreateKeyboardEvent(null,mk,false));
+}
+}catch(e){}
+}
+}
+}`;
 
 class RemoteInput {
   constructor() {
@@ -205,34 +206,33 @@ class RemoteInput {
 
   // ——— macOS başlatma ———
   _initMac() {
-    this._macTmpFile = path.join(os.tmpdir(), 'remote-input-mac-' + process.pid + '.py');
+    this._macTmpFile = path.join(os.tmpdir(), 'remote-input-mac-' + process.pid + '.js');
     try {
-      fs.writeFileSync(this._macTmpFile, MAC_HELPER_SCRIPT, 'utf8');
+      fs.writeFileSync(this._macTmpFile, MAC_HELPER_JXA, 'utf8');
     } catch (err) {
       console.log('  ⚠ macOS helper yazılamadı:', err.message);
       return;
     }
 
     try {
-      this.process = spawn('python3', ['-u', this._macTmpFile], {
+      this.process = spawn('/usr/bin/osascript', ['-l', 'JavaScript', this._macTmpFile], {
         stdio: ['pipe', 'pipe', 'pipe'],
         env: { ...process.env }
       });
     } catch (err) {
-      console.log('  ⚠ Uzaktan kontrol: Python3 başlatılamadı:', err.message);
-      console.log('  ℹ  macOS için Python3 gereklidir. "xcode-select --install" ile yükleyebilirsiniz.');
+      console.log('  ⚠ Uzaktan kontrol: osascript başlatılamadı:', err.message);
       this._cleanupMacTmp();
       return;
     }
 
     this.process.on('error', (err) => {
-      console.log('  ⚠ Python3 hata:', err.message);
+      console.log('  ⚠ osascript hata:', err.message);
       this.ready = false;
       this.enabled = false;
     });
 
     this.process.on('close', (code) => {
-      console.log('  ⚠ Python3 kapandı (kod:', code, ')');
+      console.log('  ⚠ osascript kapandı (kod:', code, ')');
       this.ready = false;
       this.enabled = false;
       this.process = null;
@@ -241,7 +241,7 @@ class RemoteInput {
 
     this.process.stderr.on('data', (chunk) => {
       const msg = chunk.toString().trim();
-      if (msg) console.log('  ⚠ Python3 stderr:', msg);
+      if (msg) console.log('  ⚠ osascript stderr:', msg);
     });
 
     let outputBuf = '';
@@ -259,7 +259,7 @@ class RemoteInput {
             this.ready = true;
             this.enabled = true;
             this._initDone = true;
-            console.log(`  ✅ Uzaktan kontrol hazır — macOS (birincil: ${parts[0]}x${parts[1]})`);
+            console.log(`  ✅ Uzaktan kontrol hazır — macOS/JXA (birincil: ${parts[0]}x${parts[1]})`);
             console.log('  ℹ  macOS: Erişilebilirlik izni gerekebilir (Sistem Ayarları → Gizlilik → Erişilebilirlik)');
             this._processPendingMonitor();
           }

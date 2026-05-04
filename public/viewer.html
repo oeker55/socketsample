@@ -9,7 +9,7 @@
 <body>
   <div class="container">
     <div class="header">
-      <h1>📺 Canlı Yayın</h1>
+      <h1><svg class="icon"><use href="icons.svg#ico-tv"/></svg> Canlı Yayın</h1>
     </div>
 
     <!-- Yükleniyor / Hata Durumu -->
@@ -22,27 +22,54 @@
     <div id="video-section" style="display:none;">
       <div class="video-wrapper" id="video-wrapper">
         <video id="remote-video" autoplay muted playsinline></video>
-        <div class="live-badge">🔴 CANLI</div>
+        <div class="live-badge"><svg class="icon"><use href="icons.svg#ico-live"/></svg> CANLI</div>
         <!-- Ses engeli overlay -->
         <div id="unmute-overlay">
-          <button id="unmute-btn">🔊 Sesi Aç &amp; Başlat</button>
+          <button id="unmute-btn"><svg class="icon"><use href="icons.svg#ico-volume"/></svg> Sesi Aç &amp; Başlat</button>
         </div>
         <!-- Uzaktan kontrol yakalama katmanı (fare olayları için) -->
         <div id="control-overlay" class="control-overlay" style="display:none;"></div>
+
+        <!-- Tam ekran chat toggle butonu -->
+        <button id="fs-chat-toggle" class="fs-chat-toggle" title="Sohbeti Aç/Kapat">
+          <svg class="icon"><use href="icons.svg#ico-chat"/></svg>
+          <span id="fs-chat-badge" class="fs-chat-badge" style="display:none"></span>
+        </button>
+
+        <!-- Tam ekran içinde şeffaf chat paneli -->
+        <div id="fs-chat-panel" class="fs-chat-panel" style="display:none;">
+          <div class="fs-chat-header">
+            <span><svg class="icon"><use href="icons.svg#ico-chat"/></svg> Sohbet</span>
+            <button id="fs-chat-close" class="fs-chat-close" title="Kapat">
+              <svg class="icon"><use href="icons.svg#ico-x"/></svg>
+            </button>
+          </div>
+          <div class="fs-chat-messages" id="fs-chat-messages"></div>
+          <div class="fs-chat-input-row">
+            <input id="fs-chat-input" type="text" maxlength="500" placeholder="Mesaj yazın..." />
+            <button id="fs-chat-send" class="btn btn-primary"><svg class="icon"><use href="icons.svg#ico-send"/></svg></button>
+          </div>
+        </div>
       </div>
 
       <!-- Uzaktan Kontrol Çubuğu -->
       <div class="control-bar" id="control-bar">
-        <button id="request-control-btn" class="btn btn-secondary">🎮 Kontrol İste</button>
-        <button id="release-control-btn" class="btn btn-danger" style="display:none;">🚫 Kontrolü Bırak</button>
+        <button id="request-control-btn" class="btn btn-secondary"><svg class="icon"><use href="icons.svg#ico-gamepad"/></svg> Kontrol İste</button>
+        <button id="release-control-btn" class="btn btn-danger" style="display:none;"><svg class="icon"><use href="icons.svg#ico-ban"/></svg> Kontrolü Bırak</button>
         <span id="control-status" class="control-status" style="display:none;"></span>
-        <button id="fullscreen-btn" class="btn btn-secondary" title="Tam Ekran">⛶ Tam Ekran</button>
+        <button id="fullscreen-btn" class="btn btn-secondary" title="Tam Ekran"><svg class="icon"><use href="icons.svg#ico-fullscreen"/></svg> Tam Ekran</button>
+      </div>
+
+      <!-- Bağlantı Tipi Göstergesi -->
+      <div id="connection-type-bar" class="connection-type-bar conn-checking" style="display:none;">
+        <span id="connection-type-icon"><svg class="icon"><use href="icons.svg#ico-search"/></svg></span>
+        <span id="connection-type-text">Bağlantı türü algılanıyor...</span>
       </div>
 
       <!-- Chat -->
       <div class="chat-box card">
         <div class="chat-header">
-          <span>💬 Canlı Sohbet</span>
+          <span><svg class="icon"><use href="icons.svg#ico-chat"/></svg> Canlı Sohbet</span>
           <span class="chat-badge" id="chat-badge" style="display:none"></span>
         </div>
         <div class="chat-messages" id="chat-messages"></div>
