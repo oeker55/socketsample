@@ -1,7 +1,28 @@
 const express = require('express');
 const http = require('http');
 const path = require('path');
+const fs = require('fs');
+const crypto = require('crypto');
+const multer = require('multer');
 const { Server } = require('socket.io');
+
+// ——— Dosya Yükleme Klasörü ———
+const UPLOADS_DIR = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(UPLOADS_DIR)) fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+
+// Multer: uzantıyı koru, rastgele dosya adı
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, UPLOADS_DIR),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase().replace(/[^a-z0-9.]/g, '');
+    const rand = crypto.randomBytes(12).toString('hex');
+    cb(null, rand + (ext || ''));
+  },
+});
+const upload = multer({
+  storage,
+  limits: { fileSize: 200 * 1024 * 1024 }, // 200 MB
+});
 
 const app = express();
 const server = http.createServer(app);
@@ -59,6 +80,18 @@ remoteInput.init();
 const controlSessions = {}; // roomId -> { viewerId }
 
 app.use(express.static(path.join(__dirname, 'public')));
+
+// ——— Dosya Yükleme Endpoint'i ———
+app.post('/upload', upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'Dosya bulunamadı' });
+  const url = '/uploads/' + req.file.filename;
+  res.json({
+    url,
+    originalName: req.file.originalname,
+    size: req.file.size,
+    mimeType: req.file.mimetype,
+  });
+});
 
 app.get('/config.js', async (req, res) => {
   res.type('application/javascript');
@@ -131,6 +164,24 @@ io.on('connection', (socket) => {
   socket.on('chat-message', (msg) => {
     const roomId = socket.data.roomId;
     socket.to(roomId).emit('chat-message', msg);
+  });
+
+  // Chat resim mesajı
+  socket.on('chat-image', (msg) => {
+    const roomId = socket.data.roomId;
+    if (!msg || typeof msg.imageData !== 'string') return;
+    if (!msg.imageData.startsWith('data:image/')) return;
+    // ~2 MB base64 sınırı
+    if (msg.imageData.length > 3_000_000) return;
+    socket.to(roomId).emit('chat-image', msg);
+  });
+
+  // Chat dosya mesajı (sunucuya yüklenen dosyanın URL'i)
+  socket.on('chat-file', (msg) => {
+    const roomId = socket.data.roomId;
+    if (!msg || typeof msg.url !== 'string') return;
+    if (!msg.url.startsWith('/uploads/')) return;
+    socket.to(roomId).emit('chat-file', msg);
   });
 
   // ——— Uzaktan Kontrol ———

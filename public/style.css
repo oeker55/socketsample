@@ -733,3 +733,149 @@ video {
 @media (max-width: 520px) {
   .chat-name-input { width: 80px; }
 }
+
+/* ——— CHAT GÖRSEL ——— */
+.chat-img-wrapper {
+  margin-top: 6px;
+}
+
+.chat-img {
+  max-width: 220px;
+  max-height: 220px;
+  border-radius: 8px;
+  display: block;
+  cursor: zoom-in;
+  object-fit: contain;
+  border: 1px solid #1f2e50;
+  transition: opacity 0.15s;
+}
+
+.chat-img:hover {
+  opacity: 0.88;
+}
+
+/* ——— LİGHTBOX ——— */
+.chat-lightbox {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.88);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 9999;
+  cursor: zoom-out;
+}
+
+.chat-lightbox-inner {
+  position: relative;
+  max-width: 92vw;
+  max-height: 92vh;
+}
+
+.chat-lightbox-inner img {
+  max-width: 92vw;
+  max-height: 88vh;
+  border-radius: 10px;
+  display: block;
+  object-fit: contain;
+}
+
+.chat-lightbox-close {
+  position: absolute;
+  top: -14px;
+  right: -14px;
+  background: #e94560;
+  color: #fff;
+  border: none;
+  border-radius: 50%;
+  width: 30px;
+  height: 30px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+/* ——— CHAT VİDEO ——— */
+.chat-video-wrapper {
+  margin-top: 6px;
+}
+
+.chat-video {
+  max-width: 280px;
+  max-height: 200px;
+  border-radius: 8px;
+  display: block;
+  background: #000;
+  border: 1px solid #1f2e50;
+}
+
+.chat-file-meta {
+  font-size: 0.75rem;
+  color: #666;
+  margin-top: 4px;
+}
+
+/* ——— CHAT DOSYA KARTI ——— */
+.chat-file-card {
+  margin-top: 6px;
+}
+
+.chat-file-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: #0a1628;
+  border: 1px solid #1f2e50;
+  border-radius: 8px;
+  padding: 8px 12px;
+  text-decoration: none;
+  color: #7faaff;
+  font-size: 0.85rem;
+  max-width: 240px;
+  transition: background 0.15s;
+}
+
+.chat-file-link:hover {
+  background: #0f2040;
+}
+
+.chat-file-icon {
+  font-size: 1.2rem;
+  flex-shrink: 0;
+}
+
+.chat-file-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.chat-file-size {
+  font-size: 0.72rem;
+  color: #555;
+  flex-shrink: 0;
+}
+
+/* ——— YÜKLEME GÖSTERGESİ ——— */
+.chat-upload-progress {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.chat-upload-pct {
+  color: #e94560;
+  font-weight: 700;
+}
+
+/* ——— SES ——— */
+.chat-audio-wrapper {
+  margin-top: 6px;
+}
