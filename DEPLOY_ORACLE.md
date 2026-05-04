@@ -86,12 +86,15 @@ sudo firewall-cmd --reload
 
 ## 7. TURN kullanacaksan ortam degiskenleri
 
+Kendi TURN sunucusu kuracaksan once `DEPLOY_TURN.md` dosyasindaki coturn adimlarini uygula.
+
 docker-compose.yml ile ayni klasorde .env olustur:
 
 ```env
-TURN_URLS=turn:TURN-SUNUCU-IP:3478
+TURN_URLS=turn:TURN-SUNUCU-IP:3478?transport=udp,turn:TURN-SUNUCU-IP:3478?transport=tcp
 TURN_USERNAME=kullanici
 TURN_CREDENTIAL=sifre
+ICE_TRANSPORT_POLICY=all
 ```
 
 Sonra yeniden deploy et:

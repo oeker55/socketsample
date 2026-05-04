@@ -6,6 +6,10 @@ const ICE_SERVERS = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
+  iceTransportPolicy: window.APP_CONFIG?.iceTransportPolicy || 'all',
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
+  iceCandidatePoolSize: 4,
 };
 
 // TURN sunucu erişilebilirlik testi
@@ -580,13 +584,19 @@ function getRelativeCoords(e) {
 }
 
 let lastMoveTs = 0;
+function emitRemoteInput(data, dropIfBusy = false) {
+  const channel = dropIfBusy && socket.volatile ? socket.volatile : socket;
+  channel.emit('remote-input', data);
+}
+
 function handleMouseMove(e) {
   if (!controlActive) return;
-  const now = Date.now();
-  if (now - lastMoveTs < 33) return; // ~30fps throttle
+  e.preventDefault();
+  const now = performance.now();
+  if (now - lastMoveTs < 16) return; // ~60fps throttle
   lastMoveTs = now;
   const { nx, ny } = getRelativeCoords(e);
-  socket.emit('remote-input', { type: 'mousemove', nx, ny });
+  emitRemoteInput({ type: 'mousemove', nx, ny }, true);
 }
 
 function handleMouseDown(e) {
@@ -594,7 +604,7 @@ function handleMouseDown(e) {
   e.preventDefault();
   const { nx, ny } = getRelativeCoords(e);
   const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
-  socket.emit('remote-input', { type: 'mousedown', nx, ny, button });
+  emitRemoteInput({ type: 'mousedown', nx, ny, button });
 }
 
 function handleMouseUp(e) {
@@ -602,7 +612,7 @@ function handleMouseUp(e) {
   e.preventDefault();
   const { nx, ny } = getRelativeCoords(e);
   const button = e.button === 2 ? 'right' : e.button === 1 ? 'middle' : 'left';
-  socket.emit('remote-input', { type: 'mouseup', nx, ny, button });
+  emitRemoteInput({ type: 'mouseup', nx, ny, button });
 }
 
 function handleContextMenu(e) {
@@ -613,7 +623,7 @@ function handleContextMenu(e) {
 function handleWheel(e) {
   if (!controlActive) return;
   e.preventDefault();
-  socket.emit('remote-input', { type: 'scroll', deltaY: e.deltaY });
+  emitRemoteInput({ type: 'scroll', deltaY: e.deltaY });
 }
 
 function handleKeyDown(e) {
@@ -621,7 +631,7 @@ function handleKeyDown(e) {
   const tag = (document.activeElement || {}).tagName || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   e.preventDefault();
-  socket.emit('remote-input', { type: 'keydown', keyCode: e.keyCode });
+  emitRemoteInput({ type: 'keydown', keyCode: e.keyCode });
 }
 
 function handleKeyUp(e) {
@@ -629,5 +639,5 @@ function handleKeyUp(e) {
   const tag = (document.activeElement || {}).tagName || '';
   if (tag === 'INPUT' || tag === 'TEXTAREA') return;
   e.preventDefault();
-  socket.emit('remote-input', { type: 'keyup', keyCode: e.keyCode });
+  emitRemoteInput({ type: 'keyup', keyCode: e.keyCode });
 }

@@ -28,6 +28,18 @@ const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
 
+function splitCsv(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function getIceTransportPolicy() {
+  const policy = String(process.env.ICE_TRANSPORT_POLICY || 'all').toLowerCase();
+  return policy === 'relay' ? 'relay' : 'all';
+}
+
 function buildIceServers() {
   const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -37,14 +49,17 @@ function buildIceServers() {
     { urls: 'stun:stun4.l.google.com:19302' },
   ];
 
-  const turnUrls = process.env.TURN_URLS;
-  if (turnUrls) {
+  const turnUrls = splitCsv(process.env.TURN_URLS);
+  if (turnUrls.length > 0) {
     // Kullanıcının kendi TURN sunucuları (env ile)
     iceServers.push({
-      urls: turnUrls.split(',').map((url) => url.trim()).filter(Boolean),
+      urls: turnUrls,
       username: process.env.TURN_USERNAME || '',
       credential: process.env.TURN_CREDENTIAL || '',
     });
+    if (!process.env.TURN_USERNAME || !process.env.TURN_CREDENTIAL) {
+      console.warn('  WARN: TURN_URLS set but TURN_USERNAME/TURN_CREDENTIAL is missing.');
+    }
   }
 
   return iceServers;
@@ -52,9 +67,9 @@ function buildIceServers() {
 
 // Metered.ca API ile dinamik TURN credential alma
 async function getMeteredTurnServers() {
-  const apiKey = process.env.METERED_API_KEY || '556893d3fedd6e959c64507cc5475de0041e';
-  const domain = process.env.METERED_DOMAIN || 'oeker55.metered.live';
-  if (!apiKey) return null;
+  const apiKey = process.env.METERED_API_KEY;
+  const domain = process.env.METERED_DOMAIN;
+  if (!apiKey || !domain) return null;
   try {
     const res = await fetch(`https://${domain}/api/v1/turn/credentials?apiKey=${encodeURIComponent(apiKey)}`);
     if (!res.ok) {
@@ -95,6 +110,7 @@ app.post('/upload', upload.single('file'), (req, res) => {
 
 app.get('/config.js', async (req, res) => {
   res.type('application/javascript');
+  res.setHeader('Cache-Control', 'no-store');
   // Metered.ca TURN sunucuları varsa ekle
   let servers = [...iceServers];
   const meteredServers = await getMeteredTurnServers();
@@ -109,7 +125,10 @@ app.get('/config.js', async (req, res) => {
   if (!hasTurn) {
     console.warn('  ⚠ TURN sunucusu yapılandırılmamış! METERED_API_KEY veya TURN_URLS env değişkeni gerekli.');
   }
-  res.send(`window.APP_CONFIG = ${JSON.stringify({ iceServers: servers })};`);
+  res.send(`window.APP_CONFIG = ${JSON.stringify({
+    iceServers: servers,
+    iceTransportPolicy: getIceTransportPolicy(),
+  })};`);
 });
 
 app.get('/api/monitors', (req, res) => {
@@ -345,7 +364,11 @@ io.on('connection', (socket) => {
         for (const sid of room) {
           const s = io.sockets.sockets.get(sid);
           if (s && s.data.role === 'agent') {
-            s.emit('remote-input-relay', data);
+            if (data.type === 'mousemove' && s.volatile) {
+              s.volatile.emit('remote-input-relay', data);
+            } else {
+              s.emit('remote-input-relay', data);
+            }
             return;
           }
         }

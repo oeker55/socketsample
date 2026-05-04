@@ -222,7 +222,69 @@ const ICE_SERVERS = {
     { urls: 'stun:stun.l.google.com:19302' },
     { urls: 'stun:stun1.l.google.com:19302' },
   ],
+  iceTransportPolicy: window.APP_CONFIG?.iceTransportPolicy || 'all',
+  bundlePolicy: 'max-bundle',
+  rtcpMuxPolicy: 'require',
+  iceCandidatePoolSize: 4,
 };
+
+const VIDEO_QUALITY = {
+  screen: {
+    contentHint: 'detail',
+    maxBitrate: 25000000,
+    minBitrate: 2500000,
+    startBitrate: 12000000,
+    maxFramerate: 30,
+    degradationPreference: 'maintain-resolution',
+    codecPreference: ['VP9', 'H264', 'VP8', 'AV1'],
+  },
+  camera: {
+    contentHint: 'motion',
+    maxBitrate: 6000000,
+    minBitrate: 750000,
+    startBitrate: 3000000,
+    maxFramerate: 30,
+    degradationPreference: 'balanced',
+    codecPreference: ['H264', 'VP9', 'VP8', 'AV1'],
+  },
+};
+
+const CAMERA_CAPTURE_OPTIONS = {
+  video: {
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30, max: 30 },
+  },
+  audio: {
+    echoCancellation: true,
+    noiseSuppression: true,
+    autoGainControl: true,
+  },
+};
+
+function createScreenCaptureOptions(forceMonitor = false) {
+  const video = {
+    width: { ideal: 3840 },
+    height: { ideal: 2160 },
+    frameRate: { ideal: 30, max: 60 },
+    cursor: 'always',
+    resizeMode: 'none',
+  };
+  if (forceMonitor) video.displaySurface = 'monitor';
+
+  return {
+    video,
+    audio: {
+      echoCancellation: false,
+      noiseSuppression: false,
+      autoGainControl: false,
+    },
+    monitorTypeSurfaces: 'include',
+    selfBrowserSurface: 'exclude',
+    surfaceSwitching: 'include',
+    systemAudio: 'include',
+  };
+}
 
 // TURN erişilebilirlik testi (broadcaster tarafı)
 (async function checkTurnServers() {
@@ -332,6 +394,143 @@ function generateRoomId() {
   return crypto.randomUUID().replace(/-/g, '').slice(0, 10);
 }
 
+function getVideoProfileName(track, fallback = 'camera') {
+  const settings = track?.getSettings?.() || {};
+  if (settings.displaySurface || /screen|display|window|monitor|ekran/i.test(track?.label || '')) {
+    return 'screen';
+  }
+  return fallback;
+}
+
+async function tuneVideoTrack(track, profileName) {
+  if (!track) return;
+  const profile = VIDEO_QUALITY[profileName] || VIDEO_QUALITY.camera;
+  try {
+    track.contentHint = profile.contentHint;
+  } catch (e) {
+    console.warn('Video contentHint ayarlanamadi:', e.message);
+  }
+
+  if (profileName !== 'screen' || !track.applyConstraints) return;
+  try {
+    await track.applyConstraints({
+      width: { ideal: 3840 },
+      height: { ideal: 2160 },
+      frameRate: { ideal: 30, max: 60 },
+      resizeMode: 'none',
+    });
+  } catch (e) {
+    console.warn('Ekran paylasimi ek kalite kisitlari uygulanamadi:', e.message);
+  }
+}
+
+async function prepareStreamQuality(stream, fallbackProfile) {
+  const videoTrack = stream?.getVideoTracks?.()[0];
+  if (!videoTrack) return fallbackProfile || 'camera';
+  const profileName = getVideoProfileName(videoTrack, fallbackProfile);
+  await tuneVideoTrack(videoTrack, profileName);
+  const settings = videoTrack.getSettings?.() || {};
+  console.log('Video kalite profili:', profileName, settings.width + 'x' + settings.height, settings.frameRate || '?', 'fps');
+  return profileName;
+}
+
+async function applyVideoSenderQuality(sender, profileName) {
+  if (!sender || sender.track?.kind !== 'video') return;
+  const profile = VIDEO_QUALITY[profileName] || VIDEO_QUALITY.camera;
+  try {
+    const params = sender.getParameters();
+    if (!params.encodings || params.encodings.length === 0) {
+      params.encodings = [{}];
+    }
+    const encoding = params.encodings[0];
+    encoding.maxBitrate = profile.maxBitrate;
+    encoding.maxFramerate = profile.maxFramerate;
+    encoding.scaleResolutionDownBy = 1;
+    encoding.active = true;
+    if ('priority' in encoding) encoding.priority = 'high';
+    if ('networkPriority' in encoding) encoding.networkPriority = 'high';
+    if ('degradationPreference' in params) {
+      params.degradationPreference = profile.degradationPreference;
+    }
+    await sender.setParameters(params);
+  } catch (e) {
+    console.warn('Video gonderim kalitesi ayarlanamadi:', e.message);
+  }
+}
+
+function preferVideoCodecs(sdp, preferredCodecs) {
+  if (!sdp || !preferredCodecs?.length) return sdp;
+  const lines = sdp.split('\r\n');
+  const mLineIndex = lines.findIndex((line) => line.startsWith('m=video '));
+  if (mLineIndex === -1) return sdp;
+
+  const payloadCodec = new Map();
+  for (const line of lines) {
+    const match = line.match(/^a=rtpmap:(\d+)\s+([^/]+)/i);
+    if (match) payloadCodec.set(match[1], match[2].toUpperCase());
+  }
+
+  const mLineParts = lines[mLineIndex].split(' ');
+  const header = mLineParts.slice(0, 3);
+  const payloads = mLineParts.slice(3);
+  const preferred = [];
+  const rest = [];
+
+  for (const payload of payloads) {
+    const codec = payloadCodec.get(payload);
+    const rank = preferredCodecs.findIndex((name) => name.toUpperCase() === codec);
+    if (rank >= 0) {
+      preferred.push({ payload, rank });
+    } else {
+      rest.push(payload);
+    }
+  }
+
+  preferred.sort((a, b) => a.rank - b.rank);
+  lines[mLineIndex] = header.concat(preferred.map((p) => p.payload), rest).join(' ');
+  return lines.join('\r\n');
+}
+
+function setVideoBitrateInSdp(sdp, profile) {
+  if (!sdp || !profile?.maxBitrate) return sdp;
+  const kbps = Math.round(profile.maxBitrate / 1000);
+  const minKbps = Math.round((profile.minBitrate || 0) / 1000);
+  const startKbps = Math.round((profile.startBitrate || profile.maxBitrate) / 1000);
+  const lines = sdp.split('\r\n');
+  const mLineIndex = lines.findIndex((line) => line.startsWith('m=video '));
+  if (mLineIndex === -1) return sdp;
+  const payloadCodec = new Map();
+  for (const line of lines) {
+    const match = line.match(/^a=rtpmap:(\d+)\s+([^/]+)/i);
+    if (match) payloadCodec.set(match[1], match[2].toUpperCase());
+  }
+  const bitrateCodecs = new Set(['VP8', 'VP9', 'H264', 'AV1']);
+
+  let insertAt = mLineIndex + 1;
+  while (insertAt < lines.length && (lines[insertAt].startsWith('i=') || lines[insertAt].startsWith('c='))) {
+    insertAt++;
+  }
+  while (insertAt < lines.length && (lines[insertAt].startsWith('b=AS:') || lines[insertAt].startsWith('b=TIAS:'))) {
+    lines.splice(insertAt, 1);
+  }
+  lines.splice(insertAt, 0, `b=AS:${kbps}`, `b=TIAS:${profile.maxBitrate}`);
+
+  return lines.map((line) => {
+    if (!line.startsWith('a=fmtp:')) return line;
+    if (line.includes('x-google-max-bitrate')) return line;
+    const match = line.match(/^a=fmtp:(\d+)/);
+    if (!match || !bitrateCodecs.has(payloadCodec.get(match[1]))) return line;
+    return `${line};x-google-min-bitrate=${minKbps};x-google-start-bitrate=${startKbps};x-google-max-bitrate=${kbps}`;
+  }).join('\r\n');
+}
+
+function enhanceOfferForQuality(offer, profileName) {
+  const profile = VIDEO_QUALITY[profileName] || VIDEO_QUALITY.camera;
+  let sdp = preferVideoCodecs(offer.sdp, profile.codecPreference);
+  sdp = setVideoBitrateInSdp(sdp, profile);
+  return { type: offer.type, sdp };
+}
+
 // ——— Socket.IO Olaylarını Kur ———
 function setupSocketEvents() {
   // İzleyiciden answer geldi
@@ -416,6 +615,8 @@ async function handleNewViewer(viewerId) {
   remoteDescSetMap[viewerId] = false;
 
   localStream.getTracks().forEach((track) => pc.addTrack(track, localStream));
+  const videoTrack = localStream.getVideoTracks()[0];
+  const videoProfileName = getVideoProfileName(videoTrack);
 
   // Video kalitesi - yüksek bitrate ayarla
   try {
@@ -425,7 +626,12 @@ async function handleNewViewer(viewerId) {
       if (!params.encodings || params.encodings.length === 0) {
         params.encodings = [{}];
       }
-      params.encodings[0].maxBitrate = 8000000; // 8 Mbps
+      params.encodings[0].maxBitrate = VIDEO_QUALITY[videoProfileName].maxBitrate;
+      params.encodings[0].maxFramerate = VIDEO_QUALITY[videoProfileName].maxFramerate;
+      params.encodings[0].scaleResolutionDownBy = 1;
+      if ('degradationPreference' in params) {
+        params.degradationPreference = VIDEO_QUALITY[videoProfileName].degradationPreference;
+      }
       await videoSender.setParameters(params);
     }
   } catch (e) {
@@ -447,7 +653,8 @@ async function handleNewViewer(viewerId) {
     if (pc.iceConnectionState === 'failed') {
       try {
         console.log('ICE restart başlatılıyor:', viewerId);
-        const newOffer = await pc.createOffer({ iceRestart: true });
+        const rawOffer = await pc.createOffer({ iceRestart: true });
+        const newOffer = enhanceOfferForQuality(rawOffer, videoProfileName);
         await pc.setLocalDescription(newOffer);
         socket.emit('offer', { broadcasterId: socket.id, viewerId, offer: newOffer });
       } catch (err) {
@@ -457,7 +664,8 @@ async function handleNewViewer(viewerId) {
   };
 
   try {
-    const offer = await pc.createOffer();
+    const rawOffer = await pc.createOffer();
+    const offer = enhanceOfferForQuality(rawOffer, videoProfileName);
     await pc.setLocalDescription(offer);
     socket.emit('offer', { broadcasterId: socket.id, viewerId, offer });
   } catch (err) {
@@ -476,6 +684,7 @@ async function handleNewViewer(viewerId) {
 
 // ——— Stream başlatıcı yardımcı ———
 async function startStream(stream) {
+  await prepareStreamQuality(stream);
   localStream = stream;
   document.getElementById('local-video').srcObject = stream;
   document.getElementById('setup-section').style.display = 'none';
@@ -503,12 +712,16 @@ async function startStream(stream) {
 async function switchSource(newStream) {
   const newVideoTrack = newStream.getVideoTracks()[0];
   const newAudioTrack = newStream.getAudioTracks()[0];
+  const videoProfileName = await prepareStreamQuality(newStream);
 
   for (const pc of Object.values(peerConnections)) {
     const senders = pc.getSenders();
     const videoSender = senders.find((s) => s.track && s.track.kind === 'video');
     const audioSender = senders.find((s) => s.track && s.track.kind === 'audio');
-    if (videoSender && newVideoTrack) await videoSender.replaceTrack(newVideoTrack);
+    if (videoSender && newVideoTrack) {
+      await videoSender.replaceTrack(newVideoTrack);
+      await applyVideoSenderQuality(videoSender, videoProfileName);
+    }
     if (audioSender && newAudioTrack) await audioSender.replaceTrack(newAudioTrack);
   }
 
@@ -537,10 +750,7 @@ async function switchSource(newStream) {
 document.getElementById('start-camera-btn').addEventListener('click', async () => {
   try {
     const mediaDevices = ensureMediaDevices('Kamera/mikrofon erişimi');
-    const stream = await mediaDevices.getUserMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-      audio: true
-    });
+    const stream = await mediaDevices.getUserMedia(CAMERA_CAPTURE_OPTIONS);
     await startStream(stream);
   } catch (err) {
     alert('❌ Kamera/mikrofon erişimi sağlanamadı:\n' + err.message);
@@ -554,10 +764,7 @@ document.getElementById('start-screen-btn').addEventListener('click', async () =
     if (!mediaDevices.getDisplayMedia) {
       throw new Error('Bu tarayıcı ekran paylaşımını desteklemiyor. Chrome, Edge veya HTTPS üzerinden çalışan masaustu bir tarayıcı kullanın.');
     }
-    const stream = await mediaDevices.getDisplayMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-      audio: true
-    });
+    const stream = await mediaDevices.getDisplayMedia(createScreenCaptureOptions());
     await startStream(stream);
   } catch (err) {
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
@@ -570,10 +777,7 @@ document.getElementById('start-screen-btn').addEventListener('click', async () =
 document.getElementById('switch-camera-btn').addEventListener('click', async () => {
   try {
     const mediaDevices = ensureMediaDevices('Kamera/mikrofon erişimi');
-    const stream = await mediaDevices.getUserMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-      audio: true
-    });
+    const stream = await mediaDevices.getUserMedia(CAMERA_CAPTURE_OPTIONS);
     await switchSource(stream);
   } catch (err) {
     alert('❌ Kamera erişimi sağlanamadı:\n' + err.message);
@@ -587,10 +791,7 @@ document.getElementById('switch-screen-btn').addEventListener('click', async () 
     if (!mediaDevices.getDisplayMedia) {
       throw new Error('Bu tarayıcı ekran paylaşımını desteklemiyor. Chrome, Edge veya HTTPS üzerinden çalışan masaustu bir tarayıcı kullanın.');
     }
-    const stream = await mediaDevices.getDisplayMedia({
-      video: { width: { ideal: 1920 }, height: { ideal: 1080 }, frameRate: { ideal: 30 } },
-      audio: true
-    });
+    const stream = await mediaDevices.getDisplayMedia(createScreenCaptureOptions());
     await switchSource(stream);
   } catch (err) {
     if (err.name !== 'AbortError' && err.name !== 'NotAllowedError') {
@@ -701,10 +902,7 @@ document.getElementById('control-accept-btn').addEventListener('click', async ()
   if (!isFullScreen) {
     try {
       const mediaDevices = ensureMediaDevices('Ekran paylaşımı');
-      const stream = await mediaDevices.getDisplayMedia({
-        video: { displaySurface: 'monitor' },
-        audio: true
-      });
+      const stream = await mediaDevices.getDisplayMedia(createScreenCaptureOptions(true));
       await switchSource(stream);
     } catch (err) {
       if (err.name === 'AbortError' || err.name === 'NotAllowedError') {
