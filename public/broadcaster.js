@@ -231,18 +231,18 @@ const ICE_SERVERS = {
 const VIDEO_QUALITY = {
   screen: {
     contentHint: 'detail',
-    maxBitrate: 25000000,
-    minBitrate: 2500000,
-    startBitrate: 12000000,
+    maxBitrate: 8000000,
+    minBitrate: 1000000,
+    startBitrate: 3000000,
     maxFramerate: 30,
-    degradationPreference: 'maintain-resolution',
-    codecPreference: ['VP9', 'H264', 'VP8', 'AV1'],
+    degradationPreference: 'balanced',
+    codecPreference: ['H264', 'VP8', 'VP9', 'AV1'],
   },
   camera: {
     contentHint: 'motion',
-    maxBitrate: 6000000,
-    minBitrate: 750000,
-    startBitrate: 3000000,
+    maxBitrate: 3000000,
+    minBitrate: 500000,
+    startBitrate: 1500000,
     maxFramerate: 30,
     degradationPreference: 'balanced',
     codecPreference: ['H264', 'VP9', 'VP8', 'AV1'],
@@ -264,11 +264,10 @@ const CAMERA_CAPTURE_OPTIONS = {
 
 function createScreenCaptureOptions(forceMonitor = false) {
   const video = {
-    width: { ideal: 3840 },
-    height: { ideal: 2160 },
-    frameRate: { ideal: 30, max: 60 },
+    width: { ideal: 1920 },
+    height: { ideal: 1080 },
+    frameRate: { ideal: 30, max: 30 },
     cursor: 'always',
-    resizeMode: 'none',
   };
   if (forceMonitor) video.displaySurface = 'monitor';
 
@@ -414,10 +413,9 @@ async function tuneVideoTrack(track, profileName) {
   if (profileName !== 'screen' || !track.applyConstraints) return;
   try {
     await track.applyConstraints({
-      width: { ideal: 3840 },
-      height: { ideal: 2160 },
-      frameRate: { ideal: 30, max: 60 },
-      resizeMode: 'none',
+      width: { ideal: 1920 },
+      height: { ideal: 1080 },
+      frameRate: { ideal: 30, max: 30 },
     });
   } catch (e) {
     console.warn('Ekran paylasimi ek kalite kisitlari uygulanamadi:', e.message);
@@ -525,10 +523,7 @@ function setVideoBitrateInSdp(sdp, profile) {
 }
 
 function enhanceOfferForQuality(offer, profileName) {
-  const profile = VIDEO_QUALITY[profileName] || VIDEO_QUALITY.camera;
-  let sdp = preferVideoCodecs(offer.sdp, profile.codecPreference);
-  sdp = setVideoBitrateInSdp(sdp, profile);
-  return { type: offer.type, sdp };
+  return offer;
 }
 
 // ——— Socket.IO Olaylarını Kur ———
@@ -697,7 +692,7 @@ async function startStream(stream) {
   const link = `${window.location.origin}/viewer.html?room=${roomId}`;
   document.getElementById('share-link').value = link;
   // Chat'i yayıncı olarak başlat
-  initChat(socket, true);
+  initChat(socket, true, roomId);
 
   // Ajan durumunu kontrol et ve paneli güncelle
   checkLocalAgent();

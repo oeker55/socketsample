@@ -1,7 +1,7 @@
 // chat.js — Yayıncı ve izleyici sayfası tarafından ortak kullanılır
 // socket: Socket.IO bağlantısı, isBroadcaster: bool
 
-function initChat(socket, isBroadcaster) {
+function initChat(socket, isBroadcaster, roomId) {
   const messagesEl = document.getElementById('chat-messages');
   const inputEl    = document.getElementById('chat-input');
   const nameEl     = document.getElementById('chat-name');
@@ -142,7 +142,7 @@ function initChat(socket, isBroadcaster) {
     const name = getName();
     localStorage.setItem('chat-name', name);
     const safeName = String(name).slice(0, 30);
-    const msg = { type: 'image', name: safeName, imageData: dataUrl, ts: Date.now(), isBroadcaster };
+    const msg = { type: 'image', roomId, name: safeName, imageData: dataUrl, ts: Date.now(), isBroadcaster };
     socket.emit('chat-image', msg);
     appendMessage({ ...msg, self: true });
   }
@@ -187,6 +187,7 @@ function initChat(socket, isBroadcaster) {
       try { resp = JSON.parse(xhr.responseText); } catch (e) { alert('Sunucu hatası'); return; }
       const msg = {
         type: 'file',
+        roomId,
         name: safeName,
         url: resp.url,
         fileName: resp.originalName,
@@ -246,7 +247,7 @@ function initChat(socket, isBroadcaster) {
     localStorage.setItem('chat-name', name);
     const safeText = String(text).slice(0, 500);
     const safeName = String(name).slice(0, 30);
-    const msg = { name: safeName, text: safeText, ts: Date.now(), isBroadcaster };
+    const msg = { roomId, name: safeName, text: safeText, ts: Date.now(), isBroadcaster };
     // Socket.IO ile gönder
     socket.emit('chat-message', msg);
     // Kendi mesajımızı da göster

@@ -30,13 +30,11 @@
         <!-- Uzaktan kontrol yakalama katmanı (fare olayları için) -->
         <div id="control-overlay" class="control-overlay" style="display:none;"></div>
 
-        <!-- Tam ekran chat toggle butonu -->
-        <button id="fs-chat-toggle" class="fs-chat-toggle" title="Sohbeti Aç/Kapat">
+        <button id="fs-chat-toggle" class="fs-chat-toggle" title="Sohbet">
           <svg class="icon"><use href="icons.svg#ico-chat"/></svg>
           <span id="fs-chat-badge" class="fs-chat-badge" style="display:none"></span>
         </button>
 
-        <!-- Tam ekran içinde şeffaf chat paneli -->
         <div id="fs-chat-panel" class="fs-chat-panel" style="display:none;">
           <div class="fs-chat-header">
             <span><svg class="icon"><use href="icons.svg#ico-chat"/></svg> Sohbet</span>
@@ -46,10 +44,13 @@
           </div>
           <div class="fs-chat-messages" id="fs-chat-messages"></div>
           <div class="fs-chat-input-row">
-            <input id="fs-chat-input" type="text" maxlength="500" placeholder="Mesaj yazın..." />
-            <button id="fs-chat-send" class="btn btn-primary"><svg class="icon"><use href="icons.svg#ico-send"/></svg></button>
+            <input id="fs-chat-input" type="text" maxlength="500" placeholder="Mesaj yazÄ±n..." />
+            <button id="fs-chat-send" class="btn btn-primary" title="GÃ¶nder">
+              <svg class="icon"><use href="icons.svg#ico-send"/></svg>
+            </button>
           </div>
         </div>
+
       </div>
 
       <!-- Uzaktan Kontrol Çubuğu -->

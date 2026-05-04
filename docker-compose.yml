@@ -5,6 +5,7 @@ services:
     restart: unless-stopped
     environment:
       PORT: 3000
+      TURN_PROVIDER: ${TURN_PROVIDER:-self}
       TURN_URLS: ${TURN_URLS:-}
       TURN_USERNAME: ${TURN_USERNAME:-}
       TURN_CREDENTIAL: ${TURN_CREDENTIAL:-}

@@ -7,7 +7,9 @@ const multer = require('multer');
 const { Server } = require('socket.io');
 
 function loadLocalEnv() {
-  const envPath = path.join(__dirname, '.env');
+  const envFile = process.env.LOCAL_ENV_FILE || '.env';
+  const envPath = path.resolve(__dirname, envFile);
+  if (!envPath.startsWith(__dirname)) return;
   if (!fs.existsSync(envPath)) return;
   const lines = fs.readFileSync(envPath, 'utf8').split(/\r?\n/);
   for (const line of lines) {
@@ -61,6 +63,11 @@ function getIceTransportPolicy() {
   return policy === 'relay' ? 'relay' : 'all';
 }
 
+function getTurnProvider() {
+  const provider = String(process.env.TURN_PROVIDER || 'self').toLowerCase();
+  return ['self', 'metered', 'both', 'none'].includes(provider) ? provider : 'self';
+}
+
 function buildIceServers() {
   const iceServers = [
     { urls: 'stun:stun.l.google.com:19302' },
@@ -69,6 +76,11 @@ function buildIceServers() {
     { urls: 'stun:stun3.l.google.com:19302' },
     { urls: 'stun:stun4.l.google.com:19302' },
   ];
+
+  const provider = getTurnProvider();
+  if (provider === 'metered' || provider === 'none') {
+    return iceServers;
+  }
 
   const turnUrls = splitCsv(process.env.TURN_URLS);
   if (turnUrls.length > 0) {
@@ -88,6 +100,8 @@ function buildIceServers() {
 
 // Metered.ca API ile dinamik TURN credential alma
 async function getMeteredTurnServers() {
+  const provider = getTurnProvider();
+  if (provider !== 'metered' && provider !== 'both') return null;
   const apiKey = process.env.METERED_API_KEY;
   const domain = process.env.METERED_DOMAIN;
   if (!apiKey || !domain) return null;
@@ -114,6 +128,13 @@ const remoteInput = new RemoteInput();
 remoteInput.init();
 
 const controlSessions = {}; // roomId -> { viewerId }
+
+function resolveChatRoom(socket, msg) {
+  if (socket.data.roomId) return socket.data.roomId;
+  const roomId = typeof msg?.roomId === 'string' ? msg.roomId.slice(0, 80) : '';
+  if (roomId && socket.rooms.has(roomId)) return roomId;
+  return null;
+}
 
 app.use(express.static(path.join(__dirname, 'public')));
 
@@ -149,6 +170,7 @@ app.get('/config.js', async (req, res) => {
   res.send(`window.APP_CONFIG = ${JSON.stringify({
     iceServers: servers,
     iceTransportPolicy: getIceTransportPolicy(),
+    turnProvider: getTurnProvider(),
   })};`);
 });
 
@@ -217,7 +239,7 @@ echo ""
 // ——— Socket.IO Sinyalizasyon ———
 io.on('connection', (socket) => {
   // Odaya katıl
-  socket.on('join-room', (roomId, role) => {
+  socket.on('join-room', (roomId, role, ack) => {
     socket.join(roomId);
     socket.data.roomId = roomId;
     socket.data.role = role;
@@ -231,6 +253,8 @@ io.on('connection', (socket) => {
     if (role === 'agent') {
       console.log(`  🤖 Yerel ajan odaya katıldı: ${roomId}`);
     }
+
+    if (typeof ack === 'function') ack({ ok: true, roomId, role });
   });
 
   // Offer (yayıncı → izleyici)
@@ -251,13 +275,15 @@ io.on('connection', (socket) => {
 
   // Chat mesajı
   socket.on('chat-message', (msg) => {
-    const roomId = socket.data.roomId;
+    const roomId = resolveChatRoom(socket, msg);
+    if (!roomId || !msg) return;
     socket.to(roomId).emit('chat-message', msg);
   });
 
   // Chat resim mesajı
   socket.on('chat-image', (msg) => {
-    const roomId = socket.data.roomId;
+    const roomId = resolveChatRoom(socket, msg);
+    if (!roomId) return;
     if (!msg || typeof msg.imageData !== 'string') return;
     if (!msg.imageData.startsWith('data:image/')) return;
     // ~2 MB base64 sınırı
@@ -267,7 +293,8 @@ io.on('connection', (socket) => {
 
   // Chat dosya mesajı (sunucuya yüklenen dosyanın URL'i)
   socket.on('chat-file', (msg) => {
-    const roomId = socket.data.roomId;
+    const roomId = resolveChatRoom(socket, msg);
+    if (!roomId) return;
     if (!msg || typeof msg.url !== 'string') return;
     if (!msg.url.startsWith('/uploads/')) return;
     socket.to(roomId).emit('chat-file', msg);
@@ -436,6 +463,7 @@ io.on('connection', (socket) => {
 
 const PORT = process.env.PORT || 3000;
 server.listen(PORT, () => {
+  console.log('   TURN provider:', getTurnProvider());
   console.log(`\n✅ Sunucu çalışıyor: http://localhost:${PORT}`);
   console.log('   Sinyalizasyon: Socket.IO');
   console.log('   ICE sunucuları:', iceServers.map((s) => s.urls).flat().join(', '));

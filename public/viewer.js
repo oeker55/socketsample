@@ -54,6 +54,7 @@ let broadcasterId = null;
 let remoteDescSet = false;
 let pendingCandidates = [];
 let reconnectTimer = null;
+let chatInitialized = false;
 
 const params = new URLSearchParams(window.location.search);
 const roomId = params.get('room');
@@ -230,15 +231,24 @@ if (!roomId) {
     pendingCandidates = [];
     document.getElementById('loading-spinner').style.display = 'block';
     setStatus('Yayına yeniden bağlanılıyor...');
-    socket.emit('join-room', roomId, 'viewer');
+    socket.emit('join-room', roomId, 'viewer', () => {
+      if (!chatInitialized) {
+        initChat(socket, false, roomId);
+        chatInitialized = true;
+      }
+    });
   }
 
   // Odaya katıl ve yayıncıya bildir
   socket.on('connect', () => {
-    socket.emit('join-room', roomId, 'viewer');
+    socket.emit('join-room', roomId, 'viewer', () => {
+      if (!chatInitialized) {
+        initChat(socket, false, roomId);
+        chatInitialized = true;
+      }
+    });
     setStatus('Yayıncı bağlanmayı bekliyor...');
     // Chat'i izleyici olarak başlat
-    initChat(socket, false);
   });
 
   // Sayfa kapatılırken yayıncıya bildir
@@ -325,7 +335,7 @@ function updateFsIcon() {
   // Tam ekrandan çıkınca chat panelini kapat
   if (!isFs) {
     const panel = document.getElementById('fs-chat-panel');
-    if (panel) panel.style.display = 'none';
+    if (panel) panel.classList.remove('fs-chat-open');
     fsChatOpen = false;
   }
 }
@@ -342,11 +352,13 @@ const fsChatSend = document.getElementById('fs-chat-send');
 const fsChatMessages = document.getElementById('fs-chat-messages');
 const fsChatBadge = document.getElementById('fs-chat-badge');
 
+if (fsChatToggle && fsChatPanel && fsChatClose && fsChatInput && fsChatSend && fsChatMessages && fsChatBadge) {
+
 // Toggle aç/kapa
 fsChatToggle.addEventListener('click', (e) => {
   e.stopPropagation();
   fsChatOpen = !fsChatOpen;
-  fsChatPanel.style.display = fsChatOpen ? 'flex' : 'none';
+  fsChatPanel.classList.toggle('fs-chat-open', fsChatOpen);
   if (fsChatOpen) {
     syncFsChat();
     fsChatUnread = 0;
@@ -359,7 +371,7 @@ fsChatToggle.addEventListener('click', (e) => {
 fsChatClose.addEventListener('click', (e) => {
   e.stopPropagation();
   fsChatOpen = false;
-  fsChatPanel.style.display = 'none';
+  fsChatPanel.classList.remove('fs-chat-open');
 });
 
 // Panel tıklanınca kontrol overlay'ına geçmesin
@@ -424,6 +436,7 @@ fsChatInput.addEventListener('keydown', (e) => {
 });
 
 fsChatInput.addEventListener('keyup', (e) => e.stopPropagation());
+}
 
 // ——— Ses Aç butonu ———
 document.getElementById('unmute-btn').addEventListener('click', () => {
