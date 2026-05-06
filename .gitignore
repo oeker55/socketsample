@@ -4,5 +4,8 @@ node_modules/
 !.env.example
 *.log
 public/uploads/*
+public/agent.exe
+public/agent-mac
+agent-mac-arm
 .DS_Store
 Thumbs.db
