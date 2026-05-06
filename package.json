@@ -1,15 +1,17 @@
 {
-  "name": "canli-yayin",
+  "name": "uzaktan-destek-panel",
   "version": "1.0.0",
-  "description": "WebRTC tabanlı canlı yayın paylaşım uygulaması",
+  "description": "Panel entegrasyonlu WebRTC uzaktan destek ve kontrol uygulaması",
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
     "dev": "nodemon server.js",
     "agent": "node local-agent.js",
+    "postinstall": "node scripts/build-agents-if-needed.js",
     "build-agent": "npx @yao-pkg/pkg@6.2.0 local-agent.js --targets node18-win-x64 --output public/agent.exe --compress GZip",
     "build-agent-mac": "npx @yao-pkg/pkg@6.2.0 local-agent.js --targets node18-macos-x64 --output public/agent-mac --compress GZip",
-    "build-agent-all": "npm run build-agent && npm run build-agent-mac"
+    "build-agent-mac-arm": "npx @yao-pkg/pkg@6.2.0 local-agent.js --targets node18-macos-arm64 --output public/agent-mac-arm --compress GZip",
+    "build-agent-all": "npm run build-agent && npm run build-agent-mac && npm run build-agent-mac-arm"
   },
   "dependencies": {
     "express": "^4.18.2",

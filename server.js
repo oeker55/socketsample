@@ -6,6 +6,8 @@ const crypto = require('crypto');
 const multer = require('multer');
 const { Server } = require('socket.io');
 
+const URL_PROTOCOL = 'royalstream-agent';
+
 function loadLocalEnv() {
   const envFile = process.env.LOCAL_ENV_FILE || '.env';
   const envPath = path.resolve(__dirname, envFile);
@@ -50,6 +52,8 @@ const upload = multer({
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server);
+
+app.use(express.json({ limit: '1mb' }));
 
 function splitCsv(value) {
   return String(value || '')
@@ -128,6 +132,41 @@ const remoteInput = new RemoteInput();
 remoteInput.init();
 
 const controlSessions = {}; // roomId -> { viewerId }
+const supportSessions = new Map();
+
+function sanitizeSessionId(value) {
+  return String(value || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 80);
+}
+
+function createSupportSession(meta = {}) {
+  const sessionId = sanitizeSessionId(meta.sessionId) || crypto.randomBytes(8).toString('hex');
+  const now = new Date().toISOString();
+  const session = {
+    sessionId,
+    customerId: String(meta.customerId || '').slice(0, 120),
+    customerName: String(meta.customerName || '').slice(0, 160),
+    note: String(meta.note || '').slice(0, 500),
+    status: 'waiting',
+    createdAt: now,
+    updatedAt: now,
+  };
+  supportSessions.set(sessionId, session);
+  return session;
+}
+
+function getBaseUrl(req) {
+  return `${req.protocol}://${req.get('host')}`;
+}
+
+function publicSupportSession(req, session) {
+  const baseUrl = getBaseUrl(req);
+  return {
+    ...session,
+    supportUrl: `${baseUrl}/support.html?session=${encodeURIComponent(session.sessionId)}`,
+    customerUrl: `${baseUrl}/customer.html?session=${encodeURIComponent(session.sessionId)}`,
+    agentDeepLink: `${URL_PROTOCOL}://connect?server=${encodeURIComponent(baseUrl)}&room=${encodeURIComponent(session.sessionId)}`,
+  };
+}
 
 function resolveChatRoom(socket, msg) {
   if (socket.data.roomId) return socket.data.roomId;
@@ -136,7 +175,25 @@ function resolveChatRoom(socket, msg) {
   return null;
 }
 
+app.get('/', (req, res) => {
+  res.redirect('/support.html');
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
+
+app.post('/api/support/sessions', (req, res) => {
+  const session = createSupportSession(req.body || {});
+  res.status(201).json(publicSupportSession(req, session));
+});
+
+app.get('/api/support/sessions/:sessionId', (req, res) => {
+  const session = supportSessions.get(req.params.sessionId);
+  if (!session) {
+    const created = createSupportSession({ sessionId: req.params.sessionId });
+    return res.json(publicSupportSession(req, created));
+  }
+  res.json(publicSupportSession(req, session));
+});
 
 // ——— Dosya Yükleme Endpoint'i ———
 app.post('/upload', upload.single('file'), (req, res) => {
@@ -178,6 +235,181 @@ app.get('/api/monitors', (req, res) => {
   res.json({ monitors: remoteInput.getMonitors() });
 });
 
+const ZIP_CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) {
+      c = (c & 1) ? (0xedb88320 ^ (c >>> 1)) : (c >>> 1);
+    }
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(buffer) {
+  let crc = 0xffffffff;
+  for (let i = 0; i < buffer.length; i++) {
+    crc = ZIP_CRC_TABLE[(crc ^ buffer[i]) & 0xff] ^ (crc >>> 8);
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function dosDateTime(date = new Date()) {
+  const year = Math.max(date.getFullYear(), 1980);
+  const dosTime = (date.getHours() << 11) | (date.getMinutes() << 5) | Math.floor(date.getSeconds() / 2);
+  const dosDate = ((year - 1980) << 9) | ((date.getMonth() + 1) << 5) | date.getDate();
+  return { dosTime, dosDate };
+}
+
+function createZip(entries) {
+  const fileParts = [];
+  const centralParts = [];
+  let offset = 0;
+  const { dosTime, dosDate } = dosDateTime();
+
+  for (const entry of entries) {
+    const name = Buffer.from(entry.name, 'utf8');
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data || '');
+    const crc = crc32(data);
+    const mode = entry.mode || 0o644;
+
+    const localHeader = Buffer.alloc(30);
+    localHeader.writeUInt32LE(0x04034b50, 0);
+    localHeader.writeUInt16LE(20, 4);
+    localHeader.writeUInt16LE(0x0800, 6);
+    localHeader.writeUInt16LE(0, 8);
+    localHeader.writeUInt16LE(dosTime, 10);
+    localHeader.writeUInt16LE(dosDate, 12);
+    localHeader.writeUInt32LE(crc, 14);
+    localHeader.writeUInt32LE(data.length, 18);
+    localHeader.writeUInt32LE(data.length, 22);
+    localHeader.writeUInt16LE(name.length, 26);
+    localHeader.writeUInt16LE(0, 28);
+
+    fileParts.push(localHeader, name, data);
+
+    const centralHeader = Buffer.alloc(46);
+    centralHeader.writeUInt32LE(0x02014b50, 0);
+    centralHeader.writeUInt16LE(0x031e, 4);
+    centralHeader.writeUInt16LE(20, 6);
+    centralHeader.writeUInt16LE(0x0800, 8);
+    centralHeader.writeUInt16LE(0, 10);
+    centralHeader.writeUInt16LE(dosTime, 12);
+    centralHeader.writeUInt16LE(dosDate, 14);
+    centralHeader.writeUInt32LE(crc, 16);
+    centralHeader.writeUInt32LE(data.length, 20);
+    centralHeader.writeUInt32LE(data.length, 24);
+    centralHeader.writeUInt16LE(name.length, 28);
+    centralHeader.writeUInt16LE(0, 30);
+    centralHeader.writeUInt16LE(0, 32);
+    centralHeader.writeUInt16LE(0, 34);
+    centralHeader.writeUInt16LE(0, 36);
+    centralHeader.writeUInt32LE((mode << 16) >>> 0, 38);
+    centralHeader.writeUInt32LE(offset, 42);
+
+    centralParts.push(centralHeader, name);
+    offset += localHeader.length + name.length + data.length;
+  }
+
+  const centralSize = centralParts.reduce((sum, part) => sum + part.length, 0);
+  const end = Buffer.alloc(22);
+  end.writeUInt32LE(0x06054b50, 0);
+  end.writeUInt16LE(0, 4);
+  end.writeUInt16LE(0, 6);
+  end.writeUInt16LE(entries.length, 8);
+  end.writeUInt16LE(entries.length, 10);
+  end.writeUInt32LE(centralSize, 12);
+  end.writeUInt32LE(offset, 16);
+  end.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...fileParts, ...centralParts, end]);
+}
+
+function buildMacAgentAppZip(serverUrl, arch = 'arm64') {
+  const normalizedArch = arch === 'x64' ? 'x64' : 'arm64';
+  const agentFile = normalizedArch === 'x64' ? 'agent-mac' : 'agent-mac-arm';
+  const agentPath = path.join(__dirname, 'public', agentFile);
+  const iconPath = path.join(__dirname, 'public', 'agent-icon.icns');
+  if (!fs.existsSync(agentPath)) return null;
+
+  const appName = 'Royal Stream Agent.app';
+  const plist = `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleExecutable</key>
+  <string>Royal Stream Agent</string>
+  <key>CFBundleIdentifier</key>
+  <string>com.royalstream.agent</string>
+  <key>CFBundleName</key>
+  <string>Royal Stream Agent</string>
+  <key>CFBundleDisplayName</key>
+  <string>Royal Stream Agent</string>
+  <key>CFBundleIconFile</key>
+  <string>agent-icon</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>LSUIElement</key>
+  <true/>
+  <key>CFBundleURLTypes</key>
+  <array>
+    <dict>
+      <key>CFBundleURLName</key>
+      <string>Royal Stream Agent Link</string>
+      <key>CFBundleURLSchemes</key>
+      <array>
+        <string>${URL_PROTOCOL}</string>
+      </array>
+    </dict>
+  </array>
+  <key>CFBundleShortVersionString</key>
+  <string>1.0.0</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+</dict>
+</plist>
+`;
+  const launcher = `#!/bin/bash
+APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+INSTALL_DIR="$HOME/Applications"
+INSTALL_APP="$INSTALL_DIR/Royal Stream Agent.app"
+if [ "$APP_DIR" != "$INSTALL_APP" ]; then
+  mkdir -p "$INSTALL_DIR"
+  rm -rf "$INSTALL_APP"
+  ditto "$APP_DIR" "$INSTALL_APP"
+  xattr -cr "$INSTALL_APP" 2>/dev/null
+  open "$INSTALL_APP" --args "$@"
+  exit 0
+fi
+RESOURCE_DIR="$(cd "$(dirname "$0")/../Resources" && pwd)"
+SERVER_URL="${serverUrl.replace(/"/g, '\\"')}"
+AGENT="$RESOURCE_DIR/${agentFile}"
+chmod +x "$AGENT" 2>/dev/null
+AGENT_PARENT_PID=$$ "$AGENT" "$SERVER_URL" "$@" &
+AGENT_PID=$!
+cleanup() {
+  if kill -0 "$AGENT_PID" 2>/dev/null; then
+    kill "$AGENT_PID" 2>/dev/null
+    wait "$AGENT_PID" 2>/dev/null
+  fi
+}
+trap cleanup INT TERM HUP EXIT
+wait "$AGENT_PID"
+`;
+
+  const entries = [
+    { name: `${appName}/Contents/Info.plist`, data: plist, mode: 0o644 },
+    { name: `${appName}/Contents/MacOS/Royal Stream Agent`, data: launcher, mode: 0o755 },
+    { name: `${appName}/Contents/Resources/${agentFile}`, data: fs.readFileSync(agentPath), mode: 0o755 },
+  ];
+  if (fs.existsSync(iconPath)) {
+    entries.push({ name: `${appName}/Contents/Resources/agent-icon.icns`, data: fs.readFileSync(iconPath), mode: 0o644 });
+  }
+
+  return createZip(entries);
+}
+
 // Ajan indirme endpoint'i
 app.get('/download/agent.exe', (req, res) => {
   const agentPath = path.join(__dirname, 'public', 'agent.exe');
@@ -187,6 +419,14 @@ app.get('/download/agent.exe', (req, res) => {
   res.download(agentPath, 'agent.exe');
 });
 
+app.get('/download/agent-windows.exe', (req, res) => {
+  const agentPath = path.join(__dirname, 'public', 'agent.exe');
+  if (!fs.existsSync(agentPath)) {
+    return res.status(404).send('Agent dosyası bulunamadı');
+  }
+  res.download(agentPath, 'RoyalStreamAgentSetup.exe');
+});
+
 app.get('/download/agent-mac', (req, res) => {
   const agentPath = path.join(__dirname, 'public', 'agent-mac');
   if (!require('fs').existsSync(agentPath)) {
@@ -194,7 +434,39 @@ app.get('/download/agent-mac', (req, res) => {
   }
   res.download(agentPath, 'agent-mac');
 });
-// macOS .command launcher — Gatekeeper'\u0131 a\u015far, \u00e7ift t\u0131klama ile \u00e7al\u0131\u015f\u0131r
+
+app.get('/download/agent-mac-arm', (req, res) => {
+  const agentPath = path.join(__dirname, 'public', 'agent-mac-arm');
+  if (!require('fs').existsSync(agentPath)) {
+    return res.status(404).send('Agent dosyası bulunamadı');
+  }
+  res.download(agentPath, 'agent-mac-arm');
+});
+
+app.get('/download/agent-mac-app.zip', (req, res) => {
+  const serverUrl = `${req.protocol}://${req.get('host')}`;
+  const zip = buildMacAgentAppZip(serverUrl, 'arm64');
+  if (!zip) {
+    return res.status(404).send('Mac agent dosyaları bulunamadı');
+  }
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="RoyalStreamAgent-mac.zip"');
+  res.setHeader('Content-Length', zip.length);
+  res.send(zip);
+});
+
+app.get('/download/agent-mac-intel-app.zip', (req, res) => {
+  const serverUrl = `${req.protocol}://${req.get('host')}`;
+  const zip = buildMacAgentAppZip(serverUrl, 'x64');
+  if (!zip) {
+    return res.status(404).send('Mac agent dosyaları bulunamadı');
+  }
+  res.setHeader('Content-Type', 'application/zip');
+  res.setHeader('Content-Disposition', 'attachment; filename="RoyalStreamAgent-mac-intel.zip"');
+  res.setHeader('Content-Length', zip.length);
+  res.send(zip);
+});
+// macOS .command launcher — eski istemciler için tutulur
 app.get('/download/agent-mac.command', (req, res) => {
   const serverUrl = `${req.protocol}://${req.get('host')}`;
   const script = `#!/bin/bash
@@ -202,8 +474,15 @@ app.get('/download/agent-mac.command', (req, res) => {
 # Royal Stream - Uzaktan Kontrol Ajan\u0131
 # ====================================
 cd "$(dirname "$0")"
-BINARY="./agent-mac"
 SERVER="${serverUrl}"
+ARCH="$(uname -m)"
+if [ "$ARCH" = "arm64" ]; then
+  BINARY="./agent-mac-arm"
+  DOWNLOAD_PATH="/download/agent-mac-arm"
+else
+  BINARY="./agent-mac"
+  DOWNLOAD_PATH="/download/agent-mac"
+fi
 
 echo ""
 echo "  ========================================="
@@ -214,7 +493,7 @@ echo ""
 # Binary yoksa indir
 if [ ! -f "$BINARY" ]; then
   echo "  \u2b07  Agent indiriliyor..."
-  curl -fSL -o "$BINARY" "$SERVER/download/agent-mac"
+  curl -fSL -o "$BINARY" "$SERVER$DOWNLOAD_PATH"
   if [ $? -ne 0 ]; then
     echo "  \u274c \u0130ndirme ba\u015far\u0131s\u0131z! L\u00fctfen internet ba\u011flant\u0131n\u0131z\u0131 kontrol edin."
     echo "  Kapatmak i\u00e7in bir tu\u015fa bas\u0131n..."
@@ -232,7 +511,7 @@ echo "  \ud83d\ude80 Agent ba\u015flat\u0131l\u0131yor..."
 echo ""
 "$BINARY" "$SERVER"
 `;
-  res.setHeader('Content-Type', 'application/octet-stream');
+  res.setHeader('Content-Type', 'text/x-shellscript; charset=utf-8');
   res.setHeader('Content-Disposition', 'attachment; filename="agent-mac.command"');
   res.send(script);
 });
@@ -248,6 +527,19 @@ io.on('connection', (socket) => {
     if (role === 'viewer') {
       // Yayıncıya yeni izleyici bildirimi
       socket.to(roomId).emit('viewer-joined', { viewerId: socket.id });
+    }
+
+    if (role === 'broadcaster') {
+      const room = io.sockets.adapter.rooms.get(roomId);
+      if (room) {
+        for (const sid of room) {
+          if (sid === socket.id) continue;
+          const s = io.sockets.sockets.get(sid);
+          if (s && s.data.role === 'viewer') {
+            socket.emit('viewer-joined', { viewerId: sid });
+          }
+        }
+      }
     }
 
     if (role === 'agent') {

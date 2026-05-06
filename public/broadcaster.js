@@ -11,6 +11,17 @@ document.addEventListener('DOMContentLoaded', () => {
       if (help) help.style.display = help.style.display === 'none' ? 'block' : 'none';
     });
   }
+  const stopBtn = document.getElementById('agent-stop-btn');
+  if (stopBtn) {
+    stopBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await fetch(AGENT_LOCAL_URL + '/shutdown', { method: 'POST', signal: AbortSignal.timeout(1000) });
+      } catch (err) { /* ajan kapanırken bağlantı kesilebilir */ }
+      agentAvailable = false;
+      updateAgentStatus(false, false);
+    });
+  }
 });
 
 async function checkLocalAgent() {
@@ -174,22 +185,26 @@ function updateAgentStatus(detected, connected) {
   const icon = document.getElementById('agent-status-icon');
   const text = document.getElementById('agent-status-text');
   const help = document.getElementById('agent-help');
+  const stopBtn = document.getElementById('agent-stop-btn');
   if (!bar) return;
 
   if (detected && connected) {
     bar.className = 'agent-status-bar agent-ready';
     icon.innerHTML = '<svg class="icon"><use href="icons.svg#ico-check"/></svg>';
     text.textContent = 'Uzaktan kontrol ajanı bağlı ve hazır';
+    if (stopBtn) stopBtn.style.display = 'inline-flex';
     if (help) help.style.display = 'none';
   } else if (detected) {
     bar.className = 'agent-status-bar agent-detecting';
     icon.innerHTML = '<svg class="icon"><use href="icons.svg#ico-loader"/></svg>';
     text.textContent = 'Ajan algılandı, bağlanıyor...';
+    if (stopBtn) stopBtn.style.display = 'inline-flex';
     if (help) help.style.display = 'none';
   } else {
     bar.className = 'agent-status-bar agent-not-detected';
     icon.innerHTML = '<svg class="icon"><use href="icons.svg#ico-alert"/></svg>';
     text.textContent = 'Uzaktan kontrol ajanı algılanmadı';
+    if (stopBtn) stopBtn.style.display = 'none';
     if (help) help.style.display = 'block';
   }
 }

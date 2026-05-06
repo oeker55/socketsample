@@ -86,6 +86,7 @@
         <div id="agent-status-bar" class="agent-status-bar agent-not-detected">
           <span id="agent-status-icon"><svg class="icon"><use href="icons.svg#ico-alert"/></svg></span>
           <span id="agent-status-text">Uzaktan kontrol ajanı algılanmadı</span>
+          <button id="agent-stop-btn" class="btn btn-danger btn-small agent-stop-btn" type="button" style="display:none;"><svg class="icon"><use href="icons.svg#ico-stop"/></svg> Ajanı Kapat</button>
         </div>
         <div id="agent-help" class="agent-help">
           <p>Uzaktan kontrol için bilgisayarınızda ajanın çalışması gerekir:</p>
@@ -141,9 +142,9 @@
     var runInstr = document.getElementById('agent-run-instruction');
     if (!btn || !label) return;
     if (/Macintosh|Mac OS X/i.test(ua)) {
-      btn.href = '/download/agent-mac.command';
-      label.textContent = 'agent-mac \u0130ndir';
-      if (runInstr) runInstr.innerHTML = '\u0130ndirilen <b>agent-mac.command</b> dosyas\u0131na \u00e7ift t\u0131klay\u0131n';
+      btn.href = '/download/agent-mac-app.zip';
+      label.textContent = 'Mac Agent İndir';
+      if (runInstr) runInstr.innerHTML = 'Zip dosyasını açıp <b>Royal Stream Agent</b> uygulamasını çalıştırın. Intel Mac kullanıyorsanız <a href="/download/agent-mac-intel-app.zip">Intel sürümünü indirin</a>.';
     } else {
       label.textContent = 'agent.exe İndir (Windows)';
     }

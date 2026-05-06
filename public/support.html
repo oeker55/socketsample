@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Uzaktan Destek Paneli</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body class="support-body">
+  <div class="support-shell">
+    <aside class="support-sidebar">
+      <div class="support-brand">
+        <svg class="icon"><use href="icons.svg#ico-screen"/></svg>
+        <div>
+          <strong>Uzaktan Destek</strong>
+          <span>Panel operatörü</span>
+        </div>
+      </div>
+
+      <div class="support-meta">
+        <label>Oturum</label>
+        <code id="session-id">hazırlanıyor</code>
+      </div>
+
+      <div class="support-meta">
+        <label>Müşteri bağlantısı</label>
+        <div class="support-link-row">
+          <input id="customer-link" readonly />
+          <button id="copy-customer-link" class="btn btn-secondary" title="Kopyala"><svg class="icon"><use href="icons.svg#ico-copy"/></svg></button>
+        </div>
+      </div>
+
+      <button id="open-customer-demo" class="btn btn-secondary btn-large"><svg class="icon"><use href="icons.svg#ico-link"/></svg> Müşteri Sayfasını Aç</button>
+      <button id="request-control-btn" class="btn btn-primary btn-large" disabled><svg class="icon"><use href="icons.svg#ico-gamepad"/></svg> Kontrol Talep Et</button>
+      <button id="release-control-btn" class="btn btn-danger btn-large" style="display:none;"><svg class="icon"><use href="icons.svg#ico-ban"/></svg> Kontrolü Bırak</button>
+
+      <div id="support-status" class="support-status">Oturum hazırlanıyor...</div>
+    </aside>
+
+    <main class="support-main">
+      <div id="waiting-section" class="support-waiting">
+        <div class="spinner"></div>
+        <p id="status-msg">Müşterinin onay vermesi bekleniyor...</p>
+      </div>
+
+      <section id="video-section" class="support-video-section" style="display:none;">
+        <div class="video-wrapper support-video-wrapper" id="video-wrapper">
+          <video id="remote-video" autoplay muted playsinline></video>
+          <div class="live-badge"><svg class="icon"><use href="icons.svg#ico-live"/></svg> DESTEK</div>
+          <div id="control-overlay" class="control-overlay" style="display:none;"></div>
+          <button id="fullscreen-btn" class="support-fs-btn" title="Tam ekran"><svg class="icon"><use href="icons.svg#ico-fullscreen"/></svg></button>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <script src="/config.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="support-panel.js"></script>
+</body>
+</html>

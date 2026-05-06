@@ -6,6 +6,9 @@ node_modules/
 public/uploads/*
 public/agent.exe
 public/agent-mac
+public/agent-mac-arm
+public/*.app
+public/*.zip
 agent-mac-arm
 .DS_Store
 Thumbs.db

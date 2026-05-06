@@ -32,6 +32,8 @@ var so=$.NSFileHandle.fileHandleWithStandardOutput;
 var si=$.NSFileHandle.fileHandleWithStandardInput;
 function w(s){so.writeData($.NSString.alloc.initWithUTF8String(s+'\\n').dataUsingEncoding($.NSUTF8StringEncoding));}
 function post(ev){if(ev){$.CGEventPost(0,ev);$.CFRelease(ev);}}
+function pt(x,y){return $.CGPointMake(Number(x)||0,Number(y)||0);}
+function move(x,y){var p=pt(x,y);$.CGWarpMouseCursorPosition(p);post($.CGEventCreateMouseEvent(null,5,p,0));}
 function run(){
 var screens=$.NSScreen.screens;
 var ms=$.NSScreen.mainScreen;
@@ -65,18 +67,20 @@ try{
 var d=JSON.parse(line);
 var t=d.t;
 if(t==='mm'){
-$.CGWarpMouseCursorPosition({x:d.x,y:d.y});
+move(d.x,d.y);
 }else if(t==='md'){
 var mx=d.x,my=d.y,b=d.b||'left';
-$.CGWarpMouseCursorPosition({x:mx,y:my});
-if(b==='right')post($.CGEventCreateMouseEvent(null,3,{x:mx,y:my},1));
-else if(b==='middle')post($.CGEventCreateMouseEvent(null,25,{x:mx,y:my},2));
-else post($.CGEventCreateMouseEvent(null,1,{x:mx,y:my},0));
+move(mx,my);
+var p=pt(mx,my);
+if(b==='right')post($.CGEventCreateMouseEvent(null,3,p,1));
+else if(b==='middle')post($.CGEventCreateMouseEvent(null,25,p,2));
+else post($.CGEventCreateMouseEvent(null,1,p,0));
 }else if(t==='mu'){
 var mx=d.x,my=d.y,b=d.b||'left';
-if(b==='right')post($.CGEventCreateMouseEvent(null,4,{x:mx,y:my},1));
-else if(b==='middle')post($.CGEventCreateMouseEvent(null,26,{x:mx,y:my},2));
-else post($.CGEventCreateMouseEvent(null,2,{x:mx,y:my},0));
+var p=pt(mx,my);
+if(b==='right')post($.CGEventCreateMouseEvent(null,4,p,1));
+else if(b==='middle')post($.CGEventCreateMouseEvent(null,26,p,2));
+else post($.CGEventCreateMouseEvent(null,2,p,0));
 }else if(t==='sc'){
 var a=(d.dy||0)>0?-1:1;
 post($.CGEventCreateScrollWheelEvent(null,1,1,a));
@@ -421,16 +425,16 @@ class RemoteInput {
     let x, y;
     if (this.activeMonitor) {
       const m = this.activeMonitor;
-      x = Math.round(m.x + nx * m.w);
-      y = Math.round(m.y + ny * m.h);
+      x = Math.round(m.x + nx * (m.w - 1));
+      y = Math.round(m.y + ny * (m.h - 1));
     } else {
       // activeMonitor ayarlanmamış — birincil ekrana düşecek!
       if (!this._warnedNoMonitor) {
         console.log(`  ⚠ activeMonitor null! Birincil ekrana (${this.screenWidth}x${this.screenHeight}) düşülüyor. Monitors: ${this.monitors.length}`);
         this._warnedNoMonitor = true;
       }
-      x = Math.round(nx * this.screenWidth);
-      y = Math.round(ny * this.screenHeight);
+      x = Math.round(nx * (this.screenWidth - 1));
+      y = Math.round(ny * (this.screenHeight - 1));
     }
     this._lastAbsX = x;
     this._lastAbsY = y;

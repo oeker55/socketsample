@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Uzaktan Destek Onayı</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div class="container customer-container">
+    <div class="header">
+      <h1><svg class="icon"><use href="icons.svg#ico-shield"/></svg> Uzaktan Destek</h1>
+      <p class="subtitle">Yetkili destek temsilcisi ekranınıza bağlanmak için onayınızı bekliyor.</p>
+    </div>
+
+    <section id="approval-card" class="card customer-approval">
+      <div class="setup-icon"><svg class="icon"><use href="icons.svg#ico-screen"/></svg></div>
+      <h2>Destek bağlantısını onaylıyor musunuz?</h2>
+      <p>Onay verdiğinizde ekranınızı seçmeniz istenir. Temsilci, yalnızca siz izin verdikten sonra ekranınızı görebilir ve kontrol talep edebilir.</p>
+      <div class="control-btns">
+        <button id="approve-btn" class="btn btn-primary btn-large"><svg class="icon"><use href="icons.svg#ico-check"/></svg> Onayla ve Ekranı Paylaş</button>
+        <button id="deny-btn" class="btn btn-danger btn-large"><svg class="icon"><use href="icons.svg#ico-x"/></svg> Reddet</button>
+      </div>
+    </section>
+
+    <section id="agent-card" class="card customer-agent" style="display:none;">
+      <div class="agent-status-bar agent-detecting">
+        <span id="agent-status-icon"><svg class="icon"><use href="icons.svg#ico-loader"/></svg></span>
+        <span id="agent-status-text">Kurulu destek ajanı açılıyor...</span>
+      </div>
+      <div id="agent-install-help" class="agent-help" style="display:none;">
+        <p>Bu bilgisayarda destek ajanı kurulu görünmüyor. Bir kez kurduktan sonra sonraki destek oturumlarında yeniden indirme gerekmez.</p>
+        <div class="agent-steps">
+          <div class="agent-step"><span class="step-num">1</span> <a id="agent-download-link" class="btn btn-primary btn-small" href="/download/agent-windows.exe"><svg class="icon"><use href="icons.svg#ico-download"/></svg> Ajanı İndir</a></div>
+          <div class="agent-step"><span class="step-num">2</span> İndirilen uygulamayı bir kez çalıştırın.</div>
+          <div class="agent-step"><span class="step-num">3</span> <button id="retry-agent-btn" class="btn btn-secondary btn-small"><svg class="icon"><use href="icons.svg#ico-loader"/></svg> Tekrar Dene</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section id="sharing-card" class="card" style="display:none;">
+      <div class="video-wrapper">
+        <video id="local-video" autoplay muted playsinline></video>
+        <div class="live-badge"><svg class="icon"><use href="icons.svg#ico-live"/></svg> PAYLAŞILIYOR</div>
+      </div>
+      <button id="stop-support-btn" class="btn btn-danger btn-large"><svg class="icon"><use href="icons.svg#ico-stop"/></svg> Destek Oturumunu Bitir</button>
+    </section>
+
+    <div id="customer-status" class="status-msg"></div>
+  </div>
+
+  <script src="/config.js"></script>
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="support-customer.js"></script>
+</body>
+</html>
